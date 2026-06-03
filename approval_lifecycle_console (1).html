@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approval Lifecycle</title>
+<!--
+  INTEGRATION (minimal changes):
+  1. Drop the <style> block + the <div class="wf">…</div> markup into any page,
+     OR include this whole file via an <iframe>/template. Everything is scoped
+     under `.wf` and uses your system fonts, so it inherits the host app's look
+     and won't touch global styles.
+  2. Replace the SAMPLE array with a fetch to your API:
+        const r = await (await fetch(`/api/v1/approval-requests/${id}/`)).json();
+     The render functions already expect that shape.
+-->
+<style>
+.wf, .wf *{ box-sizing:border-box; }
+.wf{ font-family: system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+     color:#111827; background:#ffffff; line-height:1.45; -webkit-font-smoothing:antialiased; }
+.wf-wrap{ max-width:1240px; margin:0 auto; padding:22px 20px 32px; }
+.wf-mono{ font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+.wf-muted{ color:#6b7280; }
+
+.wf-head{ display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+.wf-head h1{ font-size:18px; font-weight:700; margin:0; }
+.wf-tag{ font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+         color:#0f766e; background:#f0fdfa; border:1px solid #99f6e4; padding:3px 9px; border-radius:7px; }
+.wf-head .wf-spacer{ margin-left:auto; }
+.wf-chip{ font-size:13px; color:#6b7280; padding:6px 10px; border-radius:8px; }
+.wf-chip.on{ color:#0f766e; background:#f0fdfa; border:1px solid #cbeae4; font-weight:600; }
+
+.wf-grid{ display:grid; grid-template-columns:248px minmax(0,1fr) 282px; gap:16px; align-items:start; }
+@media (max-width:1080px){ .wf-grid{ grid-template-columns:1fr; } }
+
+.wf-card{ background:#fff; border:1px solid #e8ebf0; border-radius:14px; padding:18px; }
+.wf-card + .wf-card{ margin-top:16px; }
+.wf-label{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#6b7280; font-weight:600; }
+.wf-h3{ font-size:15px; font-weight:700; margin:0; }
+
+/* queue */
+.wf-qhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.wf-q{ display:flex; flex-direction:column; gap:10px; }
+.wf-qcard{ text-align:left; width:100%; border:1px solid #e8ebf0; background:#fff; border-radius:12px;
+           padding:12px 13px; cursor:pointer; transition:.15s; font:inherit; }
+.wf-qcard:hover{ border-color:#cbd5e1; background:#f9fafb; }
+.wf-qcard.sel{ border-color:#14b8a6; background:#f0fdfa; }
+.wf-qtop{ display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
+.wf-qtitle{ font-size:13.5px; font-weight:600; color:#1f2937; }
+.wf-bar{ height:4px; border-radius:99px; background:#eef1f5; overflow:hidden; margin-top:9px; }
+.wf-bar > i{ display:block; height:100%; }
+
+.wf-note{ font-size:12px; color:#6b7280; line-height:1.55; }
+.wf-note b{ color:#0f766e; font-weight:600; }
+
+/* header / progress */
+.wf-hwf{ font-size:12px; color:#0f766e; }
+.wf-htitle{ font-size:22px; font-weight:700; margin:2px 0 0; letter-spacing:-.01em; }
+.wf-hmeta{ font-size:13px; color:#6b7280; margin-top:6px; }
+.wf-badge{ padding:5px 12px; border-radius:99px; font-size:12px; font-weight:600; white-space:nowrap; }
+.wf-prog{ height:8px; background:#eef1f5; border-radius:99px; overflow:hidden; }
+.wf-prog > i{ display:block; height:100%; border-radius:99px; transition:width .7s ease; width:0; }
+
+/* graph */
+.wf-legend{ display:flex; gap:14px; font-size:11px; color:#6b7280; }
+.wf-legend span{ display:inline-flex; align-items:center; gap:6px; }
+.wf-legend i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+.wf-graph{ position:relative; width:100%; height:262px; }
+.wf-graph svg{ position:absolute; inset:0; width:100%; height:100%; }
+.wf-nodes{ position:absolute; inset:0; }
+.wf-node{ position:absolute; transform:translate(-50%,-50%); }
+.wf-circle{ width:56px; height:56px; border-radius:50%; display:grid; place-items:center;
+            font-weight:700; font-size:18px; position:relative; }
+.wf-nlabel{ position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:9px;
+            text-align:center; white-space:nowrap; }
+.wf-nlabel b{ font-size:12px; font-weight:600; }
+.wf-nlabel small{ display:block; font-size:10px; color:#9ca3af; font-family:ui-monospace,monospace; }
+.wf-active::after{ content:''; position:absolute; inset:-6px; border-radius:50%;
+                   border:2px solid rgba(245,158,11,.55); animation:wfp 1.8s ease-out infinite; }
+@keyframes wfp{ 0%{transform:scale(.85);opacity:.9} 100%{transform:scale(1.5);opacity:0} }
+
+/* tabs */
+.wf-tabs{ display:flex; gap:22px; border-bottom:1px solid #e8ebf0; padding:0 2px; }
+.wf-tab{ background:none; border:none; font:inherit; padding:12px 0; font-size:14px; font-weight:600;
+         color:#6b7280; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+.wf-tab.sel{ color:#0f766e; border-color:#14b8a6; }
+.wf-tabbody{ padding:18px 2px 4px; }
+
+/* timeline */
+.wf-tl{ list-style:none; margin:0; padding:0; }
+.wf-tl li{ position:relative; padding-left:26px; }
+.wf-tl li.gap{ padding-bottom:18px; }
+.wf-ln{ position:absolute; left:5px; top:16px; bottom:0; width:1px; background:#e8ebf0; }
+.wf-tldot{ position:absolute; left:0; top:5px; width:11px; height:11px; border-radius:50%; }
+.wf-tlrow{ display:flex; align-items:center; gap:8px; }
+.wf-tlrow .t{ font-size:12px; color:#6b7280; width:46px; }
+.wf-tlrow .a{ font-size:14px; font-weight:600; }
+.wf-tlrow .by{ font-size:12px; color:#9ca3af; }
+.wf-tldesc{ font-size:13px; color:#4b5563; margin:2px 0 0 54px; }
+
+/* data + automation */
+.wf-data{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width:520px){ .wf-data{ grid-template-columns:1fr; } }
+.wf-dcell{ border:1px solid #eef1f5; background:#fafbfc; border-radius:9px; padding:10px 12px; }
+.wf-dcell .k{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
+.wf-dcell .v{ font-size:14px; font-weight:500; margin-top:2px; }
+.wf-arow{ display:flex; align-items:center; gap:12px; border:1px solid #eef1f5; background:#fafbfc;
+          border-radius:9px; padding:11px 12px; }
+.wf-arow + .wf-arow{ margin-top:10px; }
+.wf-aico{ width:34px; height:34px; border-radius:9px; display:grid; place-items:center;
+          background:#f0fdfa; color:#0f766e; border:1px solid #cbeae4; }
+.wf-pill{ font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; }
+
+/* rail */
+.wf-stagebig{ font-size:18px; font-weight:700; }
+.wf-appr{ display:flex; flex-direction:column; gap:11px; }
+.wf-arow2{ display:flex; align-items:center; gap:11px; }
+.wf-av{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center;
+        font-size:12px; font-weight:700; color:#374151; background:#f3f4f6; }
+.wf-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+.wf-btn{ width:100%; border-radius:9px; padding:10px; font:inherit; font-weight:600; font-size:14px;
+         cursor:pointer; border:1px solid transparent; }
+.wf-btn-primary{ background:#14b8a6; color:#fff; } .wf-btn-primary:hover{ background:#0d9488; }
+.wf-btn-danger{ background:#fff; color:#e11d48; border-color:#fecdd3; } .wf-btn-danger:hover{ background:#fff1f2; }
+.wf-btn-ghost{ background:#fff; color:#374151; border-color:#e5e7eb; } .wf-btn-ghost:hover{ background:#f9fafb; }
+.wf-actrow{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+.wf-foot{ font-size:12px; color:#9ca3af; margin-top:18px; }
+</style>
+</head>
+<body>
+<div class="wf">
+  <div class="wf-wrap">
+    <div class="wf-head">
+      <h1>Approval Lifecycle</h1>
+      <span class="wf-tag">Approvals</span>
+      <div class="wf-spacer"></div>
+      <span class="wf-chip">Form Builder</span>
+      <span class="wf-chip on">Approvals</span>
+    </div>
+
+    <div class="wf-grid">
+      <!-- queue -->
+      <aside>
+        <div class="wf-qhead">
+          <span class="wf-label">Requests</span>
+          <span id="queueCount" class="wf-mono wf-muted" style="font-size:12px"></span>
+        </div>
+        <div id="queue" class="wf-q"></div>
+        <div class="wf-card" style="margin-top:16px;padding:14px">
+          <div class="wf-label" style="margin-bottom:6px">Architecture</div>
+          <p class="wf-note">Two independent apps. The <b>Form&nbsp;Builder</b> emits a subject; <b>Approvals</b> drives its lifecycle — decoupled via a generic engine.</p>
+        </div>
+      </aside>
+
+      <!-- center -->
+      <section>
+        <div class="wf-card">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+            <div>
+              <div id="hWorkflow" class="wf-hwf wf-mono"></div>
+              <h2 id="hTitle" class="wf-htitle"></h2>
+              <div id="hMeta" class="wf-hmeta"></div>
+            </div>
+            <div id="hBadge"></div>
+          </div>
+          <div style="margin-top:18px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+              <span id="hStageLabel" style="font-weight:600;color:#374151"></span>
+              <span id="hPct" class="wf-mono wf-muted"></span>
+            </div>
+            <div class="wf-prog"><i id="hBar"></i></div>
+          </div>
+        </div>
+
+        <div class="wf-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <h3 class="wf-h3">Workflow lifecycle</h3>
+            <div class="wf-legend">
+              <span><i style="background:#14b8a6"></i>done</span>
+              <span><i style="background:#f59e0b"></i>active</span>
+              <span><i style="background:#fff;border:1px solid #d1d5db"></i>pending</span>
+              <span><i style="background:#f43f5e"></i>rejected</span>
+            </div>
+          </div>
+          <div id="graphWrap" class="wf-graph">
+            <svg id="edges" preserveAspectRatio="none"></svg>
+            <div id="nodes" class="wf-nodes"></div>
+          </div>
+        </div>
+
+        <div class="wf-card" style="padding-top:0">
+          <div class="wf-tabs">
+            <button class="wf-tab" data-tab="timeline">Timeline</button>
+            <button class="wf-tab" data-tab="data">Submission</button>
+            <button class="wf-tab" data-tab="automation">Automation</button>
+          </div>
+          <div id="tabBody" class="wf-tabbody"></div>
+        </div>
+      </section>
+
+      <!-- rail -->
+      <aside>
+        <div class="wf-card">
+          <div class="wf-label" style="margin-bottom:10px">Current stage</div>
+          <div id="stageBox"></div>
+        </div>
+        <div class="wf-card">
+          <div class="wf-label" style="margin-bottom:12px">Approvers</div>
+          <div id="approvers" class="wf-appr"></div>
+        </div>
+        <div id="actionBox"></div>
+      </aside>
+    </div>
+    <div class="wf-foot">Reads <span class="wf-mono">/api/v1/approval-requests/{id}/</span> + <span class="wf-mono">/timeline/</span> · sample data shown for preview.</div>
+  </div>
+</div>
+
+<script>
+const NODE = {
+  done:    {fill:'#14b8a6', border:'#14b8a6', icon:'#ffffff'},
+  active:  {fill:'#f59e0b', border:'#f59e0b', icon:'#ffffff'},
+  pending: {fill:'#ffffff', border:'#d1d5db', icon:'#9ca3af'},
+  rejected:{fill:'#f43f5e', border:'#f43f5e', icon:'#ffffff'},
+};
+const BADGE = {
+  approved:['Approved','#ecfdf5','#047857'], under_review:['Under review','#fffbeb','#b45309'],
+  pending:['Pending','#fffbeb','#b45309'], rejected:['Rejected','#fef2f2','#be123c'],
+  completed:['Completed','#ecfdf5','#047857'],
+};
+const DOT = { done:'#14b8a6', active:'#f59e0b', pending:'#9ca3af', rejected:'#f43f5e', info:'#2563eb' };
+
+const SAMPLE = [
+  { id:204, title:'Vendor Onboarding — Acme Corp', workflow:'vendor_onboarding', state:'under_review',
+    pct:50, stageLabel:'Awaiting Compliance + Security', initiated_by:'amit', submitted:'2026-06-02 09:02',
+    sla:'4h SLA · 1h 12m left',
+    nodes:[ {id:'start',label:'Submitted',sub:'09:02',x:6,y:50,state:'done'},
+      {id:'mgr',label:'Manager',sub:'approved',x:26,y:50,state:'done'},
+      {id:'comp',label:'Compliance',sub:'approved',x:50,y:24,state:'done'},
+      {id:'sec',label:'Security',sub:'reviewing',x:50,y:74,state:'active'},
+      {id:'dir',label:'Director',sub:'pending',x:74,y:50,state:'pending'},
+      {id:'done',label:'Approved',sub:'',x:94,y:50,state:'pending'} ],
+    edges:[['start','mgr'],['mgr','comp'],['mgr','sec'],['comp','dir'],['sec','dir'],['dir','done']],
+    timeline:[ ['09:02','amit','Submitted','Public form submission (IP 1.2.3.4)','done'],
+      ['09:14','priya','Manager approved','“GST & turnover verified.”','done'],
+      ['09:20','system','Routed to Compliance + Security','parallel · all must approve','info'],
+      ['09:31','ravi','Compliance approved','“KYC clean.”','done'],
+      ['—','neha','Security reviewing','awaiting decision','active'] ],
+    data:[['Customer Name','Acme Corp Pvt Ltd'],['GST Number','29ABCDE1234F1Z5'],['Contact Email','ops@acme.com'],['Annual Turnover','₹ 42.0 Cr'],['Category','Manufacturing']],
+    automation:[['Provision vendor record','celery_task','on_approved','queued','#6b7280','#f3f4f6'],['Notify account team','notify','on_approved','queued','#6b7280','#f3f4f6']],
+    approvers:[['NK','Neha Kapoor','Security · pending','active'],['RB','Ravi Bose','Compliance · approved','done']],
+    stage:{name:'Compliance + Security',policy:'parallel · all',progress:'1 of 2 approved'}, canAct:true },
+
+  { id:205, title:'Release v2.4.0 — Payments', workflow:'release_approval', state:'approved',
+    pct:100, stageLabel:'Approved · automation complete', initiated_by:'deploybot', submitted:'2026-06-01 16:40',
+    sla:'Closed in 38m',
+    nodes:[ {id:'start',label:'Submitted',sub:'16:40',x:8,y:50,state:'done'},
+      {id:'eng',label:'Eng Lead',sub:'approved',x:34,y:50,state:'done'},
+      {id:'rel',label:'Release Mgr',sub:'approved',x:60,y:50,state:'done'},
+      {id:'done',label:'Approved',sub:'17:18',x:90,y:50,state:'done'} ],
+    edges:[['start','eng'],['eng','rel'],['rel','done']],
+    timeline:[ ['16:40','deploybot','Submitted','release candidate v2.4.0','done'],
+      ['16:55','sara','Eng Lead approved','“CI green, changelog ok.”','done'],
+      ['17:18','tom','Release Mgr approved','“Ship it.”','done'],
+      ['17:18','system','Automation fired','3 actions on_approved','info'],
+      ['17:18','deploy','Deploy to prod → GitHub Actions','HTTP 204 · ref main','done'],
+      ['17:19','chain','Triggered post_deploy_validation','request #206','done'] ],
+    data:[['Service','payments-api'],['Version','v2.4.0'],['Environment','production'],['Change ticket','PAY-3391']],
+    automation:[['Deploy to prod','deploy','on_approved','success','#047857','#ecfdf5'],['Post-deploy validation','trigger_workflow','on_approved','success','#047857','#ecfdf5'],['Notify #releases','notify','on_approved','success','#047857','#ecfdf5']],
+    approvers:[['SA','Sara Ali','Eng Lead · approved','done'],['TM','Tom Mehta','Release Mgr · approved','done']],
+    stage:{name:'Complete',policy:'—',progress:'all stages cleared'}, canAct:false },
+
+  { id:207, title:'Contract — Globex MSA', workflow:'contract_approval', state:'rejected',
+    pct:40, stageLabel:'Rejected at Compliance', initiated_by:'legalops', submitted:'2026-05-30 11:05',
+    sla:'Closed in 2h 10m',
+    nodes:[ {id:'start',label:'Submitted',sub:'11:05',x:8,y:50,state:'done'},
+      {id:'mgr',label:'Manager',sub:'approved',x:34,y:50,state:'done'},
+      {id:'comp',label:'Compliance',sub:'rejected',x:60,y:50,state:'rejected'},
+      {id:'done',label:'Approved',sub:'',x:90,y:50,state:'pending'} ],
+    edges:[['start','mgr'],['mgr','comp'],['comp','done']],
+    timeline:[ ['11:05','legalops','Submitted','MSA draft v3','done'],
+      ['11:40','priya','Manager approved','“Commercials fine.”','done'],
+      ['13:15','ravi','Compliance rejected','“Liability cap unacceptable — return to legal.”','rejected'],
+      ['13:15','system','Initiator notified','request_rejected','info'] ],
+    data:[['Counterparty','Globex Corp'],['Contract value','$ 1.2M / yr'],['Term','24 months'],['Owner','legalops']],
+    automation:[['Notify legal owner','notify','on_rejected','success','#047857','#ecfdf5']],
+    approvers:[['PI','Priya Iyer','Manager · approved','done'],['RB','Ravi Bose','Compliance · rejected','rejected']],
+    stage:{name:'Compliance',policy:'any',progress:'rejected'}, canAct:false },
+];
+
+let DATA = SAMPLE;
+let activeId = SAMPLE[0].id, activeTab = 'timeline';
+const $ = s => document.querySelector(s);
+const cur = () => DATA.find(r => r.id === activeId);
+const dot = st => `<span class="wf-dot" style="background:${DOT[st]||'#9ca3af'}"></span>`;
+function badge(state){ const [t,bg,fg]=BADGE[state]||['—','#f3f4f6','#374151'];
+  return `<span class="wf-badge" style="background:${bg};color:${fg}">${t}</span>`; }
+
+function renderQueue(){
+  $('#queueCount').textContent = DATA.length+' total';
+  $('#queue').innerHTML = DATA.map(r=>{
+    const sel=r.id===activeId, [,,fg]=BADGE[r.state]||['','','#6b7280'];
+    const col=r.state==='rejected'?'#f43f5e':'#14b8a6';
+    return `<button class="wf-qcard ${sel?'sel':''}" data-id="${r.id}">
+      <div class="wf-qtop"><span class="wf-mono wf-muted" style="font-size:11px">#${r.id}</span>
+        <span style="font-size:11px;font-weight:600;color:${fg}">${(BADGE[r.state]||['',''])[0]}</span></div>
+      <div class="wf-qtitle">${r.title}</div>
+      <div class="wf-bar"><i style="width:${r.pct}%;background:${col}"></i></div></button>`;
+  }).join('');
+  document.querySelectorAll('.wf-qcard').forEach(b=>b.onclick=()=>{ activeId=+b.dataset.id; renderAll(); });
+}
+
+function renderGraph(){
+  const r=cur(), W=900, H=262, px=n=>(n.x/100)*W, py=n=>(n.y/100)*H;
+  const map=Object.fromEntries(r.nodes.map(n=>[n.id,n]));
+  const svg=$('#edges'); svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.innerHTML = r.edges.map(([a,b])=>{
+    const A=map[a],B=map[b], x1=px(A)+42,y1=py(A),x2=px(B)-42,y2=py(B), mx=(x1+x2)/2;
+    const on=(A.state!=='pending'&&A.state!=='rejected');
+    const col=A.state==='rejected'?'#f43f5e':(on?'#14b8a6':'#d1d5db');
+    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="${col}" stroke-width="2.5"/>`;
+  }).join('');
+  $('#nodes').innerHTML = r.nodes.map(n=>{
+    const c=NODE[n.state], isEnd=n.id==='done';
+    const icon = n.state==='done'?'✓':(n.state==='rejected'?'✕':(isEnd?'★':''));
+    return `<div class="wf-node" style="left:${n.x}%;top:${py(n)}px">
+      <div class="wf-circle ${n.state==='active'?'wf-active':''}" style="background:${c.fill};border:2px solid ${c.border};color:${c.icon}">${icon}</div>
+      <div class="wf-nlabel"><b style="color:${n.state==='pending'?'#9ca3af':'#111827'}">${n.label}</b><small>${n.sub||''}</small></div>
+    </div>`;
+  }).join('');
+}
+
+function renderTabs(){
+  const r=cur();
+  document.querySelectorAll('.wf-tab').forEach(b=>b.classList.toggle('sel', b.dataset.tab===activeTab));
+  let html='';
+  if(activeTab==='timeline'){
+    html=`<ul class="wf-tl">`+r.timeline.map((t,i)=>{
+      const last=i===r.timeline.length-1;
+      return `<li class="${last?'':'gap'}"><span class="wf-tldot" style="background:${DOT[t[4]]}"></span>
+        ${last?'':'<span class="wf-ln"></span>'}
+        <div class="wf-tlrow"><span class="t wf-mono">${t[0]}</span><span class="a">${t[2]}</span><span class="by">· ${t[1]}</span></div>
+        <div class="wf-tldesc">${t[3]}</div></li>`;
+    }).join('')+`</ul>`;
+  } else if(activeTab==='data'){
+    html=`<div class="wf-data">`+r.data.map(d=>`<div class="wf-dcell"><div class="k">${d[0]}</div><div class="v">${d[1]}</div></div>`).join('')+`</div>`;
+  } else {
+    html = r.automation.length ? r.automation.map(a=>`
+      <div class="wf-arow"><div class="wf-aico">⚙</div>
+        <div style="flex:1"><div style="font-size:14px;font-weight:500">${a[0]}</div>
+          <div class="wf-mono wf-muted" style="font-size:11px">${a[1]} · ${a[2]}</div></div>
+        <span class="wf-pill" style="color:${a[4]};background:${a[5]}">${a[3]}</span></div>`).join('')
+      : `<div class="wf-muted" style="font-size:14px">No automation configured.</div>`;
+  }
+  $('#tabBody').innerHTML=html;
+}
+
+function renderRail(){
+  const r=cur();
+  const st = r.state==='rejected'?'rejected':(r.state==='approved'?'done':'active');
+  $('#stageBox').innerHTML=`<div class="wf-stagebig">${r.stage.name}</div>
+    <div class="wf-muted" style="font-size:14px;margin-top:2px">${r.stage.policy}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px">${dot(st)}<span style="color:#374151">${r.stage.progress}</span></div>
+    <div class="wf-mono wf-muted" style="font-size:12px;margin-top:10px">${r.sla}</div>`;
+  $('#approvers').innerHTML=r.approvers.map(a=>{
+    const bc=a[3]==='done'?'#14b8a6':a[3]==='rejected'?'#f43f5e':'#f59e0b';
+    return `<div class="wf-arow2"><div class="wf-av" style="border:1px solid ${bc}">${a[0]}</div>
+      <div style="flex:1"><div style="font-size:14px">${a[1]}</div><div class="wf-muted" style="font-size:11px">${a[2]}</div></div>${dot(a[3])}</div>`;
+  }).join('');
+  $('#actionBox').innerHTML = r.canAct ? `<div class="wf-card">
+      <div class="wf-label" style="margin-bottom:10px">Your action</div>
+      <button class="wf-btn wf-btn-primary" onclick="act('approve')">Approve</button>
+      <div class="wf-actrow"><button class="wf-btn wf-btn-danger" onclick="act('reject')">Reject</button><button class="wf-btn wf-btn-ghost" onclick="act('delegate')">Delegate</button></div>
+    </div>` : '';
+}
+
+function renderHeader(){
+  const r=cur();
+  $('#hWorkflow').textContent=r.workflow;
+  $('#hTitle').textContent=r.title;
+  $('#hMeta').innerHTML=`<span class="wf-mono" style="font-size:12px">#${r.id}</span> · by ${r.initiated_by} · submitted ${r.submitted}`;
+  $('#hBadge').innerHTML=badge(r.state);
+  $('#hStageLabel').textContent=r.stageLabel;
+  $('#hPct').textContent=r.pct+'%';
+  const bar=$('#hBar'); bar.style.width='0%';
+  bar.style.background=r.state==='rejected'?'#f43f5e':'#14b8a6';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>bar.style.width=r.pct+'%'));
+}
+
+function renderAll(){ renderQueue(); renderHeader(); renderGraph(); renderTabs(); renderRail(); }
+document.querySelectorAll('.wf-tab').forEach(b=>b.onclick=()=>{ activeTab=b.dataset.tab; renderTabs(); });
+
+function getCookie(name){ const m=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+async function loadFromApi(){
+  try{
+    const r = await fetch('/api/v1/approval-requests/console/', {credentials:'same-origin', headers:{'Accept':'application/json'}});
+    if(!r.ok) return;                       // not authenticated / no API → keep sample preview
+    const rows = await r.json();
+    if(Array.isArray(rows) && rows.length){
+      DATA = rows;
+      if(!DATA.find(x=>x.id===activeId)) activeId = DATA[0].id;
+      renderAll();
+    }
+  }catch(e){ /* offline/standalone preview → keep sample */ }
+}
+async function act(kind){
+  const r = cur(); if(!r || !r.taskId) return;
+  let body = {};
+  if(kind==='delegate'){ const to = prompt('Delegate to user id:'); if(!to) return; body = {to_user:+to}; }
+  try{
+    const resp = await fetch(`/api/v1/approval-tasks/${r.taskId}/${kind}/`, {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+      body: JSON.stringify(body),
+    });
+    if(!resp.ok){ const e = await resp.json().catch(()=>({})); alert(e.detail || ('Action failed ('+resp.status+')')); return; }
+    await loadFromApi();
+  }catch(e){ alert('Network error'); }
+}
+
+renderAll();      // instant render (sample data)
+loadFromApi();    // swap in live data when the API is reachable
+
+</script>
+</body>
+</html>
