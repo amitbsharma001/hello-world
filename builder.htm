@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form Builder</title>
+<!--
+  Add fields AND approvers inline, then "Submit for approval".
+  On submit the backend compiles the approver rows into a per-form workflow
+  and starts it; once approved, the form's public link goes live.
+
+  Wired to the API (falls back to in-memory preview if no API/login):
+    POST   /api/v1/forms/                      {name, fields:[...], approvers:[...]}
+    POST   /api/v1/forms/{id}/submit-for-approval/
+  Approver rows map to FormApprover {kind, email|user, step}.
+-->
+<style>
+.fb,.fb *{box-sizing:border-box;}
+.fb{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#111827;background:#fff;line-height:1.45;-webkit-font-smoothing:antialiased;}
+.fb-wrap{max-width:920px;margin:0 auto;padding:24px 20px 40px;}
+.fb-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+.fb-muted{color:#6b7280;}
+.fb-head{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+.fb-head h1{font-size:20px;font-weight:700;margin:0;}
+.fb-tag{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+        color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;padding:3px 9px;border-radius:7px;}
+.fb-sub{font-size:13px;color:#6b7280;margin-bottom:20px;}
+.fb-card{background:#fff;border:1px solid #e8ebf0;border-radius:14px;padding:18px;margin-bottom:18px;}
+.fb-sec{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.fb-sec h2{font-size:15px;font-weight:700;margin:0;}
+.fb-label{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6b7280;font-weight:600;}
+.fb-input{width:100%;border:1px solid #d8dee8;border-radius:8px;padding:9px 11px;font:inherit;font-size:14px;color:#111827;background:#fff;}
+.fb-input:focus{outline:none;border-color:#14b8a6;box-shadow:0 0 0 3px rgba(20,184,166,.12);}
+.fb-row{display:grid;align-items:center;gap:10px;border:1px solid #eef1f5;background:#fafbfc;border-radius:10px;padding:10px;margin-bottom:10px;}
+.fb-row.field{grid-template-columns:18px 1fr 1fr 130px 86px 30px;}
+.fb-row.appr{grid-template-columns:18px 1fr 150px 110px 30px;}
+.fb-grip{color:#cbd5e1;cursor:grab;text-align:center;font-size:13px;}
+.fb-chk{display:flex;align-items:center;gap:6px;font-size:13px;color:#374151;}
+.fb-x{border:none;background:none;color:#cbd5e1;font-size:18px;cursor:pointer;line-height:1;}
+.fb-x:hover{color:#ef4444;}
+.fb-add{border:1px dashed #cbd5e1;background:#fff;color:#0f766e;font:inherit;font-weight:600;font-size:13px;
+        border-radius:9px;padding:9px;width:100%;cursor:pointer;}
+.fb-add:hover{border-color:#14b8a6;background:#f0fdfa;}
+.fb-btn{border-radius:9px;padding:11px 18px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;border:1px solid transparent;}
+.fb-primary{background:#14b8a6;color:#fff;}.fb-primary:hover{background:#0d9488;}
+.fb-ghost{background:#fff;color:#374151;border-color:#d8dee8;}.fb-ghost:hover{background:#f9fafb;}
+.fb-actions{display:flex;gap:10px;align-items:center;}
+.fb-hint{font-size:12px;color:#6b7280;margin-top:4px;}
+.fb-note{font-size:12px;color:#0f766e;background:#f0fdfa;border:1px solid #cbeae4;border-radius:9px;padding:10px 12px;margin-top:6px;}
+.fb-toast{margin-left:auto;font-size:13px;font-weight:600;}
+select.fb-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;}
+</style>
+</head>
+<body>
+<div class="fb"><div class="fb-wrap">
+  <div class="fb-head"><h1>Create form</h1><span class="fb-tag">Form Builder</span></div>
+  <div class="fb-sub">Build the form, add the people who must approve it, then submit. The public link stays dead until it's approved.</div>
+
+  <!-- form meta -->
+  <div class="fb-card">
+    <div class="fb-label" style="margin-bottom:6px">Form name</div>
+    <input id="formName" class="fb-input" value="Vendor Onboarding" placeholder="e.g. Invoice Intake">
+  </div>
+
+  <!-- FIELDS -->
+  <div class="fb-card">
+    <div class="fb-sec"><h2>Fields</h2><span class="fb-muted" id="fieldCount"></span></div>
+    <div id="fields"></div>
+    <button class="fb-add" onclick="addField()">+ Add field</button>
+  </div>
+
+  <!-- APPROVERS (same pattern as fields) -->
+  <div class="fb-card">
+    <div class="fb-sec"><h2>Approvers</h2><span class="fb-muted" id="apprCount"></span></div>
+    <div id="approvers"></div>
+    <button class="fb-add" onclick="addApprover()">+ Add approver</button>
+    <div class="fb-note">Approvers in the same <b>step</b> are parallel (all must approve); steps run in order. Leave everyone on step 1 to require all of them.</div>
+  </div>
+
+  <div class="fb-actions">
+    <button class="fb-btn fb-ghost" onclick="save('draft')">Save draft</button>
+    <button class="fb-btn fb-primary" onclick="save('submit')">Submit for approval</button>
+    <span class="fb-toast" id="toast"></span>
+  </div>
+</div></div>
+
+<script>
+const TYPES = ["text","textarea","number","email","date","dropdown","checkbox","file"];
+let fields = [
+  {label:"Vendor name", name:"vendor_name", type:"text", required:true},
+  {label:"GST number",  name:"gst_number",  type:"text", required:true},
+  {label:"Contact email", name:"email",     type:"email", required:true},
+];
+let approvers = [
+  {email:"manager@acme.com",   step:1},
+  {email:"compliance@acme.com",step:1},
+];
+const $ = s => document.querySelector(s);
+
+function renderFields(){
+  $("#fieldCount").textContent = fields.length + (fields.length===1?" field":" fields");
+  $("#fields").innerHTML = fields.map((f,i)=>`
+    <div class="fb-row field">
+      <div class="fb-grip">⠿</div>
+      <input class="fb-input" value="${f.label}" oninput="upd('f',${i},'label',this.value)" placeholder="Label">
+      <input class="fb-input fb-mono" value="${f.name}" oninput="upd('f',${i},'name',this.value)" placeholder="field_name">
+      <select class="fb-input" onchange="upd('f',${i},'type',this.value)">
+        ${TYPES.map(t=>`<option ${t===f.type?'selected':''}>${t}</option>`).join('')}
+      </select>
+      <label class="fb-chk"><input type="checkbox" ${f.required?'checked':''} onchange="upd('f',${i},'required',this.checked)">Required</label>
+      <button class="fb-x" onclick="del('f',${i})" title="Remove">×</button>
+    </div>`).join('');
+}
+function renderApprovers(){
+  $("#apprCount").textContent = approvers.length + (approvers.length===1?" approver":" approvers");
+  $("#approvers").innerHTML = approvers.map((a,i)=>`
+    <div class="fb-row appr">
+      <div class="fb-grip">⠿</div>
+      <input class="fb-input" value="${a.email}" oninput="upd('a',${i},'email',this.value)" placeholder="approver@company.com">
+      <select class="fb-input" onchange="upd('a',${i},'step',+this.value)">
+        ${[1,2,3,4].map(n=>`<option value="${n}" ${n===a.step?'selected':''}>Step ${n}</option>`).join('')}
+      </select>
+      <span class="fb-muted" style="font-size:12px">${a.step>1?'after step '+(a.step-1):'first'}</span>
+      <button class="fb-x" onclick="del('a',${i})" title="Remove">×</button>
+    </div>`).join('');
+}
+function upd(kind,i,key,val){ (kind==='f'?fields:approvers)[i][key]=val; }
+function del(kind,i){ (kind==='f'?fields:approvers).splice(i,1); kind==='f'?renderFields():renderApprovers(); }
+function addField(){ fields.push({label:"",name:"",type:"text",required:false}); renderFields(); }
+function addApprover(){ approvers.push({email:"",step:1}); renderApprovers(); }
+
+function getCookie(name){ const m=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():''; }
+let formId = null;   // set after first save so subsequent saves update in place
+
+async function api(url, opts){
+  return fetch(url, Object.assign({
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+  }, opts));
+}
+
+function buildPayload(){
+  return {
+    name: $("#formName").value,
+    fields: fields.map(f=>({label:f.label,name:f.name,field_type:f.type,required:f.required})),
+    approvers: approvers.filter(a=>a.email).map(a=>({kind:"email",email:a.email,step:a.step})),
+  };
+}
+
+async function save(mode){
+  const t = $("#toast");
+  const payload = buildPayload();
+  if(mode==='submit' && !payload.approvers.length){
+    t.style.color="#dc2626"; t.textContent="Add at least one approver first."; return;
+  }
+  t.style.color="#6b7280"; t.textContent="Saving…";
+  try{
+    // create or update the form
+    const url = formId ? `/api/v1/forms/${formId}/` : '/api/v1/forms/';
+    const resp = await api(url, {method: formId ? 'PUT' : 'POST', body: JSON.stringify(payload)});
+    if(!resp.ok){
+      // No live API (e.g. standalone file:// preview) → in-memory fallback
+      if(resp.status===0 || resp.status===404){ return previewOnly(mode, payload, t); }
+      const e = await resp.json().catch(()=>({}));
+      t.style.color="#dc2626"; t.textContent = e.detail || flattenErr(e) || ('Save failed ('+resp.status+')'); return;
+    }
+    const form = await resp.json();
+    formId = form.id;
+    if(mode!=='submit'){ t.style.color="#0f766e"; t.textContent="Draft saved (form #"+formId+")."; return; }
+
+    // submit for approval — builds the workflow from the approver rows
+    const sresp = await api(`/api/v1/forms/${formId}/submit-for-approval/`, {method:'POST', body:'{}'});
+    if(!sresp.ok){ const e=await sresp.json().catch(()=>({})); t.style.color="#dc2626"; t.textContent = e.detail || 'Submit failed.'; return; }
+    const s = await sresp.json();
+    t.style.color="#0f766e";
+    t.textContent = `Submitted for approval — status: ${s.approval_status} (workflow ${s.workflow}).`;
+  }catch(err){
+    previewOnly(mode, payload, t);   // network/offline → preview
+  }
+}
+
+function flattenErr(e){ try{ return Object.entries(e).map(([k,v])=>`${k}: ${v}`).join(' · '); }catch(_){ return ''; } }
+function previewOnly(mode, payload, t){
+  if(mode==='submit'){
+    const steps = [...new Set(payload.approvers.map(a=>a.step))].length;
+    t.style.color="#0f766e";
+    t.textContent = `Preview: would submit → ${steps} step(s), ${payload.approvers.length} approver(s).`;
+  } else { t.style.color="#6b7280"; t.textContent="Preview: draft captured (no API reachable)."; }
+}
+
+// If opened as /forms-builder/?id=N, load that form for editing
+async function maybeLoad(){
+  const id = new URLSearchParams(location.search).get('id');
+  if(!id) return;
+  try{
+    const r = await api(`/api/v1/forms/${id}/`, {method:'GET'});
+    if(!r.ok) return;
+    const f = await r.json();
+    formId = f.id;
+    $("#formName").value = f.name || "";
+    fields = (f.fields||[]).map(x=>({label:x.label,name:x.name,type:x.field_type,required:x.required}));
+    approvers = (f.approvers||[]).map(x=>({email:x.email||"",step:x.step||1}));
+    renderFields(); renderApprovers();
+  }catch(e){ /* keep defaults */ }
+}
+
+renderFields(); renderApprovers(); maybeLoad();
+</script>
+</body>
+</html>
