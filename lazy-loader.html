@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LazyGuard v2.2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500&family=DM+Mono&display=swap" rel="stylesheet">
+
+<!--
+  ╔════════════════════════════════════════════════╗
+  ║  LAZYGLOBAL INTEGRATION — config + script.     ║
+  ║  In <head> so the page-load bar shows from     ║
+  ║  the very first moment of page rendering.      ║
+  ╚════════════════════════════════════════════════╝
+-->
+<script>
+  window.LazyGuardConfig = {
+    trackPageLoad: true,        /* bar during initial page load */
+    pageLoadUntil: 'load',      /* wait for full load (images, css...) */
+    minDuration:   280,
+    showEndpoint:  true,
+    showElapsed:   true,
+    elapsedAfter:  2000,
+    ignoreMethod:  ['HEAD'],
+  };
+</script>
+<script>
+/* lazyglobal.js v2.2 inlined for single-file demo.
+   In production: use script src=lazyglobal.js in head instead */
+(function (root) {
+  'use strict';
+  if (root.LazyGuard && root.LazyGuard.__installed) return;
+  var _origFetch = root.fetch ? root.fetch.bind(root) : null;
+  var _origXHR   = root.XMLHttpRequest;
+  var _earlyQueue = [];
+  var cfg = {
+    minDuration:    280,
+    label:          'Loading',
+    showEndpoint:   true,
+    showCounter:    true,
+    showElapsed:    true,
+    elapsedAfter:   2000,
+    debug:          false,
+    ignoreUrls:     [],
+    ignoreMethod:   [],
+    trackBeacon:    false,
+    trackPageLoad:  true,        
+    pageLoadUntil:  'load',      
+    pageLoadPill:   false,       
+    onShow:         null,
+    onHide:         null,
+  };
+  if (root.LazyGuardConfig) {
+    Object.keys(root.LazyGuardConfig).forEach(function (k) { cfg[k] = root.LazyGuardConfig[k]; });
+  }
+  var pending    = 0;
+  var shownAt    = 0;
+  var hideTimer  = null;
+  var rafId      = null;
+  var elapsedId  = null;
+  var barWidth   = 0;
+  var lastRaf    = 0;
+  var domReady   = false;
+  var pageLoading = false;   
+  var barEl, pillEl, textEl, srEl, urlEl, sepEl, countEl, elapsedEl;
+  function dbg() {
+    if (cfg.debug) console.log.apply(console, ['[LazyGuard]'].concat(Array.prototype.slice.call(arguments)));
+  }
+  function shouldIgnore(url, method) {
+    var m = (method || 'GET').toUpperCase();
+    if (cfg.ignoreMethod.indexOf(m) !== -1) { dbg('ignored method', m, url); return true; }
+    var hit = cfg.ignoreUrls.some(function (p) {
+      return typeof p === 'string' ? url.indexOf(p) !== -1 : (p instanceof RegExp && p.test(url));
+    });
+    if (hit) dbg('ignored url', url);
+    return hit;
+  }
+  function injectCSS() {
+    if (document.getElementById('lg-style')) return;
+    var s = document.createElement('style');
+    s.id = 'lg-style';
+    s.textContent = '#lg-bar{position:fixed;top:0;left:0;width:0;height:2px;background:#111;z-index:2147483647;pointer-events:none;opacity:0;will-change:width,opacity;transition:opacity .12s ease}#lg-bar.lg-on{opacity:1}#lg-bar.lg-err{background:#d73a49}#lg-pill{position:fixed;bottom:24px;left:50%;z-index:2147483646;display:flex;align-items:center;gap:9px;padding:9px 14px;background:#fff;border:.5px solid rgba(0,0,0,.1);border-radius:100px;box-shadow:0 2px 8px rgba(0,0,0,.07),0 0 0 .5px rgba(0,0,0,.04);pointer-events:none;opacity:0;transform:translateX(-50%) translateY(6px);transition:opacity .18s ease,transform .22s cubic-bezier(.22,1,.36,1);will-change:opacity,transform;-webkit-font-smoothing:antialiased}#lg-pill.lg-on{opacity:1;transform:translateX(-50%) translateY(0)}#lg-pill.lg-err{border-color:rgba(215,58,73,.25)}#lg-dots{display:flex;align-items:center;gap:3.5px;flex-shrink:0}#lg-dots span{display:block;width:3.5px;height:3.5px;border-radius:50%;background:rgba(0,0,0,.4);animation:lg-wave .9s ease-in-out infinite}#lg-dots span:nth-child(2){animation-delay:.12s}#lg-dots span:nth-child(3){animation-delay:.24s}@keyframes lg-wave{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-3px);opacity:1}}#lg-pt{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:12.5px;font-weight:500;color:#111;letter-spacing:-.01em;white-space:nowrap}#lg-sep{width:1px;height:10px;background:rgba(0,0,0,.1);flex-shrink:0;display:none}#lg-url{font-family:ui-monospace,"SF Mono",monospace;font-size:10.5px;color:rgba(0,0,0,.35);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none}#lg-cnt{font-family:ui-monospace,monospace;font-size:10px;background:rgba(0,0,0,.05);color:rgba(0,0,0,.4);border-radius:20px;padding:1px 7px;display:none;font-variant-numeric:tabular-nums}#lg-ela{font-family:ui-monospace,monospace;font-size:10px;color:rgba(0,0,0,.22);display:none;font-variant-numeric:tabular-nums}#lg-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}@media(prefers-color-scheme:dark){#lg-bar{background:#e0e0e0}#lg-bar.lg-err{background:#ff7b89}#lg-pill{background:#1c1c1c;border-color:rgba(255,255,255,.1);box-shadow:0 2px 12px rgba(0,0,0,.4),0 0 0 .5px rgba(255,255,255,.06)}#lg-pt{color:rgba(255,255,255,.85)}#lg-sep{background:rgba(255,255,255,.1)}#lg-url{color:rgba(255,255,255,.35)}#lg-dots span{background:rgba(255,255,255,.45)}#lg-cnt{background:rgba(255,255,255,.08);color:rgba(255,255,255,.4)}#lg-ela{color:rgba(255,255,255,.25)}}@media(prefers-reduced-motion:reduce){#lg-pill{transition:opacity .1s ease;transform:translateX(-50%)!important}#lg-dots span{animation:none;opacity:.5}#lg-bar{transition:opacity .1s ease}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function injectBar() {
+    if (document.getElementById('lg-bar')) return;
+    var bar = document.createElement('div');
+    bar.id = 'lg-bar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-hidden', 'true');
+    (document.body || document.documentElement).appendChild(bar);
+    barEl = bar;
+  }
+  function injectPill() {
+    if (document.getElementById('lg-pill')) return;
+    var pill = document.createElement('div');
+    pill.id = 'lg-pill';
+    pill.setAttribute('role', 'status');
+    pill.setAttribute('aria-atomic', 'true');
+    pill.innerHTML = '<span id="lg-sr" aria-live="polite">Loading</span><div id="lg-dots" aria-hidden="true"><span></span><span></span><span></span></div><span id="lg-pt" aria-hidden="true">Loading</span><span id="lg-sep" aria-hidden="true"></span><span id="lg-url" aria-hidden="true"></span><span id="lg-cnt" aria-hidden="true"></span><span id="lg-ela" aria-hidden="true"></span>';
+    document.body.appendChild(pill);
+  }
+  function cacheRefs() {
+    barEl     = document.getElementById('lg-bar');
+    pillEl    = document.getElementById('lg-pill');
+    textEl    = document.getElementById('lg-pt');
+    srEl      = document.getElementById('lg-sr');
+    urlEl     = document.getElementById('lg-url');
+    sepEl     = document.getElementById('lg-sep');
+    countEl   = document.getElementById('lg-cnt');
+    elapsedEl = document.getElementById('lg-ela');
+    if (textEl) textEl.textContent = cfg.label;
+    if (srEl)   srEl.textContent   = cfg.label;
+  }
+  function tickBar(ts) {
+    if (!lastRaf) lastRaf = ts;
+    var dt = ts - lastRaf; lastRaf = ts;
+    barWidth += (90 - barWidth) * (1 - Math.exp(-dt / 800));
+    if (barEl) barEl.style.width = barWidth.toFixed(2) + '%';
+    rafId = requestAnimationFrame(tickBar);
+  }
+  function startBar() {
+    cancelAnimationFrame(rafId);
+    barWidth = 0; lastRaf = 0;
+    if (!barEl) return;
+    barEl.style.transition = 'none';
+    barEl.style.width = '0%';
+    barEl.classList.remove('lg-err');
+    barEl.classList.add('lg-on');
+    requestAnimationFrame(function () { rafId = requestAnimationFrame(tickBar); });
+  }
+  function continueBar() {
+    if (!barEl) return;
+    barEl.classList.remove('lg-err');
+    barEl.classList.add('lg-on');
+    if (!rafId) {
+      lastRaf = 0;
+      rafId = requestAnimationFrame(tickBar);
+    }
+  }
+  function finishBar(isErr) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    if (!barEl) return;
+    barEl.classList.toggle('lg-err', !!isErr);
+    barEl.style.transition = 'width .18s ease';
+    barEl.style.width = '100%';
+    setTimeout(function () {
+      barEl.style.transition = 'opacity .25s ease';
+      barEl.classList.remove('lg-on');
+      setTimeout(function () {
+        if (barEl) { barEl.style.width = '0%'; barEl.classList.remove('lg-err'); }
+      }, 260);
+    }, 180);
+  }
+  function startPageLoad() {
+    if (!cfg.trackPageLoad) return;
+    if (document.readyState === 'complete') return; 
+    pageLoading = true;
+    injectCSS();
+    injectBar();
+    startBar();
+    dbg('page-load bar started, readyState=', document.readyState);
+    function endPageLoad() {
+      if (!pageLoading) return;
+      pageLoading = false;
+      dbg('page-load complete');
+      if (pending > 0) {
+        dbg('handing off page-load bar to', pending, 'pending requests');
+        return;
+      }
+      finishBar(false);
+      emit('ok', 'page-load', 200);
+    }
+    if (cfg.pageLoadUntil === 'interactive') {
+      if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        endPageLoad();
+      } else {
+        document.addEventListener('DOMContentLoaded', endPageLoad, { once: true, passive: true });
+      }
+    } else {
+      root.addEventListener('load', endPageLoad, { once: true, passive: true });
+    }
+    setTimeout(function () { if (pageLoading) endPageLoad(); }, 20000);
+  }
+  function onRequestStart(url, method) {
+    dbg('start', method, url, 'pending=' + pending);
+    if (!domReady) { _earlyQueue.push({ type: 'start', url: url, method: method }); return; }
+    if (pending === 1) showUI(url, method);
+    updateCount();
+    emit('start', url, method);
+  }
+  function onRequestEnd(url, status) {
+    dbg('end', url, status, 'pending=' + pending);
+    if (!domReady) { _earlyQueue.push({ type: 'end', url: url, status: status }); return; }
+    hideUI(url, status);
+    emit(status === 0 || status >= 400 ? 'err' : 'ok', url, status);
+  }
+  function shortPath(url) {
+    try {
+      var u = new URL(url, root.location ? root.location.href : undefined);
+      var p = u.pathname;
+      return p.length > 26 ? '\u2026' + p.slice(-24) : p;
+    } catch (e) { return url.slice(0, 26); }
+  }
+  function updateCount() {
+    if (!countEl || !cfg.showCounter) return;
+    if (pending > 1) { countEl.textContent = pending; countEl.style.display = 'block'; }
+    else countEl.style.display = 'none';
+  }
+  function startElapsed() {
+    clearInterval(elapsedId);
+    if (!elapsedEl || !cfg.showElapsed) return;
+    elapsedEl.style.display = 'none';
+    elapsedId = setInterval(function () {
+      elapsedEl.textContent = ((Date.now() - shownAt) / 1000).toFixed(1) + 's';
+      elapsedEl.style.display = 'inline';
+    }, 100);
+  }
+  function stopElapsed() {
+    clearInterval(elapsedId);
+    if (elapsedEl) elapsedEl.style.display = 'none';
+  }
+  function showUI(url, method) {
+    clearTimeout(hideTimer);
+    shownAt = Date.now();
+    if (pageLoading || (barEl && barEl.classList.contains('lg-on'))) continueBar();
+    else startBar();
+    if (urlEl && cfg.showEndpoint) {
+      var path = url !== 'manual' ? shortPath(url) : '';
+      if (path && path !== '/') {
+        urlEl.textContent = path;
+        urlEl.style.display = 'inline';
+        if (sepEl) sepEl.style.display = 'block';
+      }
+    }
+    if (textEl) textEl.textContent = cfg.label;
+    if (srEl)   srEl.textContent   = cfg.label + (url !== 'manual' ? ': ' + url : '');
+    if (pillEl) { pillEl.classList.remove('lg-err'); pillEl.classList.add('lg-on'); }
+    setTimeout(function () { if (pending > 0) startElapsed(); }, cfg.elapsedAfter);
+    if (typeof cfg.onShow === 'function') cfg.onShow(url, method);
+  }
+  function hideUI(url, status) {
+    var isErr = status === 0 || status >= 400;
+    var wait  = Math.max(0, cfg.minDuration - (Date.now() - shownAt));
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+      stopElapsed();
+      if (!pageLoading) finishBar(isErr);
+      if (isErr && pillEl) {
+        pillEl.classList.add('lg-err');
+        if (textEl) textEl.textContent = 'Failed';
+        if (srEl)   srEl.textContent   = 'Request failed';
+        setTimeout(function () { pillEl.classList.remove('lg-on', 'lg-err'); resetUI(); }, 900);
+      } else {
+        if (pillEl) pillEl.classList.remove('lg-on');
+        setTimeout(resetUI, 220);
+      }
+      if (typeof cfg.onHide === 'function') cfg.onHide();
+    }, wait);
+  }
+  function resetUI() {
+    if (urlEl)   { urlEl.textContent = ''; urlEl.style.display = 'none'; }
+    if (sepEl)   sepEl.style.display = 'none';
+    if (countEl) countEl.style.display = 'none';
+    if (elapsedEl) elapsedEl.style.display = 'none';
+    if (textEl)  textEl.textContent = cfg.label;
+    if (srEl)    srEl.textContent   = cfg.label;
+  }
+  function emit(type, url, meta) {
+    try {
+      document.dispatchEvent(new CustomEvent('lazyglobal:log', {
+        detail: { type: type, url: url, meta: meta, ts: Date.now() }
+      }));
+    } catch (e) {}
+  }
+  function flushQueue() {
+    dbg('flushing', _earlyQueue.length, 'queued events');
+    if (pending > 0) {
+      var lastStart = null;
+      _earlyQueue.forEach(function (e) { if (e.type === 'start') lastStart = e; });
+      if (lastStart) showUI(lastStart.url, lastStart.method);
+      updateCount();
+      _earlyQueue.filter(function (e) { return e.type === 'start'; }).forEach(function (e) {
+        emit('start', e.url, e.method);
+      });
+    }
+    _earlyQueue.filter(function (e) { return e.type === 'end'; }).forEach(function (e) {
+      emit(e.status === 0 || e.status >= 400 ? 'err' : 'ok', e.url, e.status);
+    });
+    _earlyQueue = [];
+  }
+  if (_origXHR) {
+    function PatchedXHR() {
+      var xhr = new _origXHR();
+      var _url = '', _method = 'GET', _tracked = false;
+      var origOpen = xhr.open.bind(xhr);
+      xhr.open = function (method, url) {
+        _url = String(url); _method = String(method);
+        return origOpen.apply(xhr, arguments);
+      };
+      var origSend = xhr.send.bind(xhr);
+      xhr.send = function () {
+        if (!shouldIgnore(_url, _method)) {
+          _tracked = true;
+          pending++;
+          onRequestStart(_url, _method);
+          function done(status) {
+            if (!_tracked) return; _tracked = false;
+            pending = Math.max(0, pending - 1);
+            if (pending === 0) onRequestEnd(_url, status);
+            else updateCount();
+          }
+          xhr.addEventListener('load',  function () { done(this.status); }, { passive: true });
+          xhr.addEventListener('error', function () { done(0); }, { passive: true });
+          xhr.addEventListener('abort', function () { done(0); }, { passive: true });
+        }
+        return origSend.apply(xhr, arguments);
+      };
+      return xhr;
+    }
+    PatchedXHR.prototype = _origXHR.prototype;
+    root.XMLHttpRequest = PatchedXHR;
+  }
+  if (_origFetch) {
+    root.fetch = function (input, init) {
+      var url    = typeof input === 'string' ? input : (input && input.url) || String(input);
+      var method = (init && init.method) ? String(init.method).toUpperCase() : 'GET';
+      if (shouldIgnore(url, method)) return _origFetch(input, init);
+      pending++;
+      onRequestStart(url, method);
+      return _origFetch(input, init).then(
+        function (res) {
+          pending = Math.max(0, pending - 1);
+          if (pending === 0) onRequestEnd(url, res.status); else updateCount();
+          return res;
+        },
+        function (err) {
+          pending = Math.max(0, pending - 1);
+          if (pending === 0) onRequestEnd(url, 0); else updateCount();
+          throw err;
+        }
+      );
+    };
+  }
+  function patchBeacon() {
+    if (!cfg.trackBeacon || !navigator.sendBeacon) return;
+    var orig = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function (url, data) {
+      if (!shouldIgnore(url, 'BEACON')) {
+        pending++;
+        onRequestStart(url, 'BEACON');
+        setTimeout(function () {
+          pending = Math.max(0, pending - 1);
+          if (pending === 0) onRequestEnd(url, 200); else updateCount();
+        }, 120);
+      }
+      return orig(url, data);
+    };
+  }
+  startPageLoad();          
+  patchBeacon();
+  function fullBootstrap() {
+    injectCSS();
+    injectBar();
+    injectPill();
+    cacheRefs();
+    domReady = true;
+    flushQueue();
+    dbg('full bootstrap complete');
+  }
+  if (document.body) {
+    fullBootstrap();
+  } else {
+    document.addEventListener('DOMContentLoaded', fullBootstrap, { once: true });
+  }
+  root.LazyGuard = {
+    __installed: true,
+    show: function (label) {
+      pending++;
+      if (textEl) textEl.textContent = label || cfg.label;
+      onRequestStart('manual', 'MANUAL');
+    },
+    hide: function () {
+      pending = Math.max(0, pending - 1);
+      if (pending === 0) onRequestEnd('manual', 200);
+    },
+    config: function (opts) {
+      Object.assign(cfg, opts);
+      if (opts.label && textEl) textEl.textContent = opts.label;
+    },
+    pending: function () { return pending; },
+    isPageLoading: function () { return pageLoading; },
+  };
+}(typeof window !== 'undefined' ? window : this));
+</script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; color-scheme: light dark; }
+body {
+  background: #f7f7f5; color: #1a1a1a;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+}
+@media (prefers-color-scheme: dark) {
+  body { background: #111; color: #ddd; }
+  .card, .demo-table, .log-block { background: #181818; border-color: rgba(255,255,255,0.07); }
+  .card-header, .log-bar { background: #141414; border-color: rgba(255,255,255,0.05); }
+  .demo-row:hover { background: #1e1e1e; }
+  .row-icon { background: #222; }
+  .row-title { color: #ddd; }
+  .row-sub, .row-badge { color: rgba(255,255,255,0.28); }
+  .row-badge { background: #222; }
+  pre { color: rgba(255,255,255,0.5); }
+  .copy-btn { border-color: rgba(255,255,255,0.09); color: rgba(255,255,255,0.35); }
+  .copy-btn:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.65); }
+  .lang-tag { color: rgba(255,255,255,0.18); }
+  .prop-key { color: rgba(255,255,255,0.28); }
+  .prop-val { color: rgba(255,255,255,0.65); }
+  .prop-row, .demo-row { border-color: rgba(255,255,255,0.05); }
+  .log-ts { color: rgba(255,255,255,0.12); }
+  .log-url { color: rgba(255,255,255,0.38); }
+  .section-label { color: rgba(255,255,255,0.18); }
+  .callout { background: #181818; color: rgba(255,255,255,0.45); border-color: rgba(255,255,255,0.06); }
+  code.ic { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.55); }
+  .t-cm { color: rgba(255,255,255,0.18); } .t-str { color: #7ee787; } .t-key { color: #ff7b72; }
+  .t-fn { color: #79c0ff; } .t-num { color: #ffa657; }
+  h1 { color: #f0f0f0; }
+  .desc { color: rgba(255,255,255,0.38); }
+  .badge.gray { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.35); }
+  .new-tag { background: rgba(126,231,135,0.12) !important; color: #7ee787 !important; }
+}
+.page { max-width: 680px; margin: 0 auto; padding: 72px 28px 120px; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.badge.gray { background: #f0f0ee; color: #888; }
+.new-tag { background: #e8f7ec; color: #219a52; }
+h1 { font-size: 2.35rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 10px; }
+.desc { font-size: 0.93rem; color: #888; line-height: 1.65; margin-bottom: 40px; max-width: 510px; }
+code.ic { font-family: 'DM Mono', monospace; font-size: 0.83em; background: #f0efeb; padding: 1px 5px; border-radius: 4px; }
+.callout { background: #f0efeb; border: 0.5px solid rgba(0,0,0,0.07); border-radius: 8px; padding: 13px 15px; display: flex; gap: 10px; font-size: 0.875rem; color: #555; line-height: 1.55; margin-bottom: 28px; }
+.callout-i { flex-shrink: 0; }
+.section-label { font-size: 0.67rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: #bbb; margin-bottom: 10px; margin-top: 36px; display: block; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 0.5px solid rgba(0,0,0,0.06); background: #fafafa; }
+.lang-tag { font-family: 'DM Mono', monospace; font-size: 10px; color: #bbb; text-transform: uppercase; letter-spacing: 0.06em; }
+.copy-btn { background: none; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 5px; padding: 3px 10px; font-size: 11.5px; color: #777; cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500; transition: all 0.12s; }
+.copy-btn:hover { background: #f0f0f0; color: #333; }
+pre { padding: 16px 20px; font-family: 'DM Mono', monospace; font-size: 11.5px; line-height: 1.8; color: #555; overflow-x: auto; }
+.t-key{color:#c0392b}.t-str{color:#219a52}.t-fn{color:#2471b8}.t-cm{color:#bbb}.t-num{color:#d68910}.t-tag{color:#555}
+.demo-table { background: #fff; border: 0.5px solid rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+.demo-row { display: flex; align-items: center; gap: 13px; padding: 12px 15px; border-bottom: 0.5px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.1s; user-select: none; }
+.demo-row:last-child { border-bottom: none; }
+.demo-row:hover { background: #fafafa; }
+.demo-row:active { background: #f3f3f0; }
+.row-icon { width: 27px; height: 27px; border-radius: 6px; background: #f2f1ed; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+.row-body { flex: 1; min-width: 0; }
+.row-title { font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 1px; display: flex; align-items: center; gap: 6px; }
+.row-sub { font-size: 11.5px; color: #aaa; }
+.row-badge { font-family: 'DM Mono', monospace; font-size: 10px; color: #bbb; background: #f5f5f5; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+.props { background: #fff; border: 0.5px solid rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+.prop-row { display: flex; align-items: baseline; padding: 9px 15px; border-bottom: 0.5px solid rgba(0,0,0,0.05); }
+.prop-row:last-child { border-bottom: none; }
+.prop-key { width: 144px; flex-shrink: 0; color: #999; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.prop-val { color: #333; font-family: 'DM Mono', monospace; font-size: 12px; }
+.prop-val.t { color: #219a52; } .prop-val.f { color: #c0392b; } .prop-val.n { color: #d68910; }
+.props .badge { font-size: 9px; padding: 1px 6px; }
+.log-block { background: #fff; border: 0.5px solid rgba(0,0,0,0.08); border-radius: 10px; overflow: hidden; }
+.log-bar { display: flex; align-items: center; gap: 7px; padding: 9px 15px; border-bottom: 0.5px solid rgba(0,0,0,0.05); background: #fafafa; font-size: 11.5px; color: #bbb; font-weight: 500; }
+.log-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1a1a; animation: blink 2s ease infinite; }
+@media (prefers-color-scheme: dark) { .log-dot { background: rgba(255,255,255,0.6); } }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+#lg-log { max-height: 148px; overflow-y: auto; padding: 4px 0; }
+.le { display: flex; align-items: center; gap: 11px; padding: 4px 15px; font-family: 'DM Mono', monospace; font-size: 11px; animation: si 0.12s ease; }
+@keyframes si { from{opacity:0;transform:translateY(-2px)} to{opacity:1;transform:none} }
+.log-ts { color: #ddd; width: 62px; flex-shrink: 0; }
+.log-tag { width: 30px; flex-shrink: 0; font-weight: 500; }
+.log-tag.ok{color:#219a52}.log-tag.req{color:#d68910}.log-tag.err{color:#c0392b}
+.log-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #999; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="badge-row">
+    <span class="badge new-tag">NEW: page-load tracking</span>
+    <span class="badge gray">Zero-dependency</span>
+    <span class="badge gray">Auto-initializing</span>
+    <span class="badge gray">fetch + XHR + Beacon</span>
+    <span class="badge gray">Dark mode</span>
+  </div>
+
+  <h1>LazyGuard <span style="font-size:1rem;font-weight:400;color:#aaa">v2.2</span></h1>
+  <p class="desc">
+    Now visible <strong>from the very first moment</strong> — the progress bar starts the instant the
+    script parses in <code class="ic">&lt;head&gt;</code>, tracks the initial page load, then hands off
+    seamlessly to AJAX tracking.
+  </p>
+
+  <div class="callout">
+    <span class="callout-i">🔄</span>
+    <span><strong>Reload this page</strong> to see the page-load bar in action — it appears at the top before content even renders, and completes when everything has loaded.</span>
+  </div>
+
+  <span class="section-label">How the page-load bar works</span>
+  <div class="card">
+    <div class="card-header"><span class="lang-tag">Timeline</span></div>
+    <pre><span class="t-cm">0ms     browser parses &lt;script src="lazyglobal.js"&gt; in &lt;head&gt;</span>
+<span class="t-fn">  ├─</span> fetch/XHR patched           <span class="t-cm">(nothing escapes)</span>
+<span class="t-fn">  ├─</span> CSS + bar injected           <span class="t-cm">(into &lt;html&gt;, body not needed)</span>
+<span class="t-fn">  └─</span> <span class="t-key">bar starts animating</span>        <span class="t-cm">← user sees loading immediately</span>
+
+<span class="t-cm">~50ms   body parses, content renders progressively</span>
+<span class="t-fn">  └─</span> pill + full UI injected
+
+<span class="t-cm">~800ms  window 'load' fires (all images, css, fonts done)</span>
+<span class="t-fn">  ├─</span> if AJAX in flight → <span class="t-str">bar keeps running</span> (seamless handoff)
+<span class="t-fn">  └─</span> else → <span class="t-str">bar sweeps to 100% and fades</span></pre>
+  </div>
+
+  <span class="section-label">Integration — still one line</span>
+  <div class="card">
+    <div class="card-header">
+      <span class="lang-tag">HTML</span>
+      <button class="copy-btn" onclick="copyIt()">Copy</button>
+    </div>
+    <pre id="snip"><span class="t-cm">&lt;!-- in &lt;head&gt;, as early as possible --&gt;</span>
+<span class="t-tag">&lt;script&gt;</span>
+  window.LazyGuardConfig = {
+    trackPageLoad: <span class="t-key">true</span>,     <span class="t-cm">// bar during initial page load</span>
+    pageLoadUntil: <span class="t-str">'load'</span>,   <span class="t-cm">// 'load' | 'interactive'</span>
+    minDuration:   <span class="t-num">280</span>,
+    ignoreUrls:    [<span class="t-str">'/health'</span>],
+  };
+<span class="t-tag">&lt;/script&gt;</span>
+<span class="t-tag">&lt;script</span> <span class="t-fn">src</span>=<span class="t-str">"lazyglobal.js"</span><span class="t-tag">&gt;&lt;/script&gt;</span></pre>
+  </div>
+
+  <span class="section-label">Configuration</span>
+  <div class="props">
+    <div class="prop-row"><span class="prop-key">trackPageLoad <span class="badge new-tag">new</span></span><span class="prop-val t">true</span></div>
+    <div class="prop-row"><span class="prop-key">pageLoadUntil <span class="badge new-tag">new</span></span><span class="prop-val">'load'  <span style="color:#ccc">| 'interactive'</span></span></div>
+    <div class="prop-row"><span class="prop-key">minDuration</span><span class="prop-val n">280</span><span style="color:#ccc;font-size:11px;margin-left:8px;font-family:'DM Mono',monospace">ms</span></div>
+    <div class="prop-row"><span class="prop-key">showEndpoint</span><span class="prop-val t">true</span></div>
+    <div class="prop-row"><span class="prop-key">showCounter</span><span class="prop-val t">true</span></div>
+    <div class="prop-row"><span class="prop-key">showElapsed</span><span class="prop-val t">true</span></div>
+    <div class="prop-row"><span class="prop-key">elapsedAfter</span><span class="prop-val n">2000</span><span style="color:#ccc;font-size:11px;margin-left:8px;font-family:'DM Mono',monospace">ms</span></div>
+    <div class="prop-row"><span class="prop-key">trackBeacon</span><span class="prop-val f">false</span></div>
+    <div class="prop-row"><span class="prop-key">debug</span><span class="prop-val f">false</span></div>
+    <div class="prop-row"><span class="prop-key">ignoreUrls</span><span class="prop-val">[]  <span style="color:#ccc">string | RegExp</span></span></div>
+    <div class="prop-row"><span class="prop-key">ignoreMethod</span><span class="prop-val">[]</span></div>
+  </div>
+
+  <span class="section-label">Live demo</span>
+  <div class="demo-table">
+    <div class="demo-row" onclick="location.reload()">
+      <div class="row-icon">🔄</div>
+      <div class="row-body"><div class="row-title">Reload page <span class="badge new-tag">page-load bar</span></div><div class="row-sub">Watch the bar appear before content renders</div></div>
+      <span class="row-badge">F5</span>
+    </div>
+    <div class="demo-row" onclick="demoFetch(1400)">
+      <div class="row-icon">🌐</div>
+      <div class="row-body"><div class="row-title">fetch() — auto-intercepted</div><div class="row-sub">No code changes needed</div></div>
+      <span class="row-badge">1.4s</span>
+    </div>
+    <div class="demo-row" onclick="demoXHR(2000)">
+      <div class="row-icon">📡</div>
+      <div class="row-body"><div class="row-title">XMLHttpRequest — auto-intercepted</div><div class="row-sub">Axios, jQuery.ajax, legacy code</div></div>
+      <span class="row-badge">2s</span>
+    </div>
+    <div class="demo-row" onclick="demoSlow()">
+      <div class="row-icon">⏱</div>
+      <div class="row-body"><div class="row-title">Slow request — elapsed timer</div><div class="row-sub">Counter appears after 2s</div></div>
+      <span class="row-badge">4s</span>
+    </div>
+    <div class="demo-row" onclick="demoMulti()">
+      <div class="row-icon">🔀</div>
+      <div class="row-body"><div class="row-title">3 parallel requests</div><div class="row-sub">Badge shows count</div></div>
+      <span class="row-badge">1–2s</span>
+    </div>
+    <div class="demo-row" onclick="demoManual()">
+      <div class="row-icon">🎛️</div>
+      <div class="row-body"><div class="row-title">Manual API</div><div class="row-sub">LazyGuard.show() / .hide()</div></div>
+      <span class="row-badge">2s</span>
+    </div>
+    <div class="demo-row" onclick="demoError()">
+      <div class="row-icon">❌</div>
+      <div class="row-body"><div class="row-title">Network error — red state</div><div class="row-sub">Bar turns red, pill shows "Failed"</div></div>
+      <span class="row-badge">err</span>
+    </div>
+  </div>
+
+  <span class="section-label">Activity</span>
+  <div class="log-block">
+    <div class="log-bar"><div class="log-dot"></div>Console</div>
+    <div id="lg-log">
+      <div class="le"><span class="log-ts">--:--:--</span><span class="log-tag" style="color:#ddd">RDY</span><span class="log-url" style="color:#ccc">Waiting…</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('lazyglobal:log', function(e) {
+  var d = e.detail;
+  var log = document.getElementById('lg-log');
+  if (!log) return;
+  var t = new Date(d.ts).toTimeString().slice(0,8);
+  var tags = {start:'REQ',ok:'OK ',err:'ERR'};
+  var cls  = {start:'req',ok:'ok',err:'err'};
+  var el   = document.createElement('div');
+  el.className = 'le';
+  var url  = (d.url||'').length > 54 ? '\u2026' + d.url.slice(-52) : (d.url||'');
+  var meta = (d.type !== 'start' && d.meta !== undefined) ? ' \u2192 ' + d.meta : '';
+  el.innerHTML = '<span class="log-ts">'+t+'</span><span class="log-tag '+cls[d.type]+'">'+(tags[d.type]||d.type)+'</span><span class="log-url">'+url+meta+'</span>';
+  log.prepend(el);
+  while (log.children.length > 50) log.removeChild(log.lastChild);
+});
+
+function demoFetch(ms) { fetch('https://httpbin.org/delay/'+(ms/1000).toFixed(1)).catch(function(){}); }
+function demoXHR(ms) { var x=new XMLHttpRequest(); x.open('GET','https://httpbin.org/delay/'+(ms/1000).toFixed(1)); x.send(); }
+function demoSlow() { fetch('https://httpbin.org/delay/4').catch(function(){}); }
+function demoMulti() {
+  fetch('https://httpbin.org/delay/1').catch(function(){});
+  fetch('https://httpbin.org/delay/2').catch(function(){});
+  fetch('https://httpbin.org/delay/1.5').catch(function(){});
+}
+function demoManual() {
+  LazyGuard.show('Processing\u2026');
+  setTimeout(function(){ LazyGuard.hide(); LazyGuard.config({label:'Loading'}); }, 2000);
+}
+function demoError() { fetch('https://this-does-not-exist-xyz.invalid/').catch(function(){}); }
+function copyIt() {
+  navigator.clipboard.writeText(document.getElementById('snip').innerText).then(function(){
+    var b=document.querySelector('.copy-btn'); b.textContent='Copied';
+    setTimeout(function(){b.textContent='Copy';},1800);
+  });
+}
+</script>
+</body>
+</html>
