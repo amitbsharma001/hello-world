@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SAP PRD access request</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eef1f5;color:#1f2937;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:22px 16px 46px}
+.shell{background:#fff;border:1px solid #e6e9ef;border-radius:14px;overflow:hidden}
+.strip{height:6px;background:linear-gradient(90deg,#9E2896,#007BC0,#18837E,#00884A,#EFBE00,#E2462F)}
+.hdr{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;padding:18px 26px 16px;border-bottom:1px solid #eef1f5;flex-wrap:wrap}
+.logo{font-weight:800;font-size:23px;letter-spacing:.08em;color:#E2462F}
+.hmid h1{margin:0;font-size:20px}
+.hmid p{margin:3px 0 0;color:#6b7280;font-size:13px}
+.sla{border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:10px 14px;text-align:right;min-width:210px}
+.sla .lbl{color:#E2462F;font-size:11px;font-weight:700;letter-spacing:.05em}
+.sla .val{font-weight:700;font-size:14px;margin-top:2px}
+.titleband{display:flex;gap:14px;align-items:center;background:#f7f8fa;padding:16px 26px;border-bottom:1px solid #eef1f5}
+.bang{width:34px;height:34px;border-radius:9px;background:#fee2e2;color:#E2462F;font-weight:800;font-size:19px;display:flex;align-items:center;justify-content:center;flex:none}
+.titleband h2{margin:0;font-size:24px}
+.titleband .sub{color:#6b7280;font-size:13px;margin-top:2px}
+.metarow{display:flex;gap:28px;flex-wrap:wrap;padding:16px 26px 4px}
+.meta{display:flex;gap:10px;align-items:flex-start}
+.mic{width:30px;height:30px;border-radius:8px;background:#eaf4fb;color:#007BC0;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+.meta .l{color:#6b7280;font-size:12px;font-weight:600}
+.meta .v{font-size:14px;font-weight:600;margin-top:1px}
+.desc{margin:12px 26px 4px;color:#4b5563;font-size:13.5px;line-height:1.55;background:#f9fafb;border:1px solid #f0f2f5;border-radius:10px;padding:12px 14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;padding:16px 26px 6px}
+.info{border:1px solid #e8ebf1;border-radius:12px;padding:14px 16px}
+.info h3{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:14px}
+.cic{width:22px;height:22px;border-radius:6px;background:#eaf4fb;color:#007BC0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}
+.info h3.green .cic{background:#e7f5ee;color:#00884A}
+.row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px}
+.row:last-child{border-bottom:0}
+.row .k{width:42%;color:#6b7280;flex:none}
+.row .v{font-weight:600;word-break:break-word}
+.row .v.bad{color:#E2462F}
+.row .v.good{color:#00884A}
+.actwrap{padding:18px 26px 6px}
+textarea{width:100%;border:1px solid #d8dee8;border-radius:9px;padding:11px 12px;font:inherit;font-size:13.5px;min-height:74px}
+textarea:focus{outline:none;border-color:#007BC0;box-shadow:0 0 0 3px rgba(0,123,192,.12)}
+.actions{display:flex;gap:14px;margin-top:14px;flex-wrap:wrap}
+.actions button{flex:1;min-width:220px;border:0;border-radius:10px;padding:14px;cursor:pointer;color:#fff;font:inherit}
+.actions .t{display:block;font-weight:800;font-size:15px}
+.actions .s{display:block;font-size:11.5px;opacity:.85;margin-top:2px}
+.approve{background:#00884A}.approve:hover{background:#046e3e}
+.reject{background:#E2462F}.reject:hover{background:#c33a26}
+.note{color:#6b7280;font-size:12px;text-align:center;margin:12px 0 4px}
+.foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#9ca3af;font-size:11.5px;border-top:1px solid #eef1f5;margin-top:14px;padding:12px 26px}
+.state{padding:44px 26px;text-align:center}
+.state h1{margin:8px 0 6px;font-size:22px}
+.state p{color:#6b7280;font-size:14px;margin:0}
+.ok{color:#00884A}.bad{color:#E2462F}
+.badge{width:56px;height:56px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800}
+.badge.ok{background:#e7f5ee}.badge.bad{background:#fee2e2}.badge.gray{background:#f3f4f6;color:#9ca3af}
+</style></head>
+<body><div class="wrap"><div class="shell"><div class="strip"></div>
+
+<div class="hdr">
+  <div class="logo">BOSCH</div>
+  <div class="hmid">
+    <h1>Approval Required</h1>
+    <p>Action needed — approval awaiting you</p>
+  </div>
+  
+  <div class="sla"><div class="lbl">&#9679; SLA / DEADLINE</div><div class="val">15 Jul 2026, 06:00 PM</div></div>
+  
+</div>
+
+
+
+  <div class="titleband">
+    <div class="bang">!</div>
+    <div>
+      <h2>SAP PRD access request</h2>
+      <div class="sub">Access Request | Security Approval</div>
+    </div>
+  </div>
+
+  
+  <div class="metarow">
+    
+    <div class="meta"><div class="mic">&#10148;</div>
+      <div><div class="l">Workflow</div><div class="v">SAP PRD access request</div></div></div>
+    
+    <div class="meta"><div class="mic">&#10148;</div>
+      <div><div class="l">Type</div><div class="v">Access Request</div></div></div>
+    
+  </div>
+  
+
+  <div class="desc">Read-only finance role for Q3 audit preparation.</div>
+
+  <div class="grid">
+    
+    <div class="info">
+      <h3><span class="cic">&#9776;</span>Access Details</h3>
+      
+      <div class="row"><div class="k">System</div><div class="v ">SAP PRD (P17)</div></div>
+      
+      <div class="row"><div class="k">Role</div><div class="v ">Z_FIN_VIEW</div></div>
+      
+      <div class="row"><div class="k">Duration</div><div class="v ">90 days</div></div>
+      
+      <div class="row"><div class="k">Access Type</div><div class="v ">Read-only</div></div>
+      
+    </div>
+    
+    <div class="info">
+      <h3><span class="cic">&#9776;</span>Risk Assessment</h3>
+      
+      <div class="row"><div class="k">Level</div><div class="v ">Medium</div></div>
+      
+      <div class="row"><div class="k">SoD Conflicts</div><div class="v ">None detected</div></div>
+      
+      <div class="row"><div class="k">Review Status</div><div class="v good">Passed</div></div>
+      
+    </div>
+    
+    <div class="info">
+      <h3><span class="cic">&#8801;</span>Additional Information</h3>
+      
+      <div class="row"><div class="k">Requested By</div><div class="v ">Anita Sharma (Finance Analyst)</div></div>
+      
+      <div class="row"><div class="k">Type</div><div class="v ">Access Request</div></div>
+      
+      <div class="row"><div class="k">Due Date</div><div class="v ">15 Jul 2026, 06:00 PM</div></div>
+      
+    </div>
+    
+    <div class="info">
+      <h3><span class="cic">&#9786;</span>Request Information</h3>
+      
+      <div class="row"><div class="k">Requested on</div><div class="v ">03 Jul 2026, 02:44 AM</div></div>
+      
+      <div class="row"><div class="k">Approver</div><div class="v ">security@bosch-test.example · Security Approval</div></div>
+      
+    </div>
+    
+  </div>
+
+  <div class="actwrap">
+    <form method="post"><input type="hidden" name="csrfmiddlewaretoken" value="KWpznEDPjn29fCprLQfD2B8VwbCsiuOsDJJbbRUzLBCRM2JR013QPlAVt7RriQC6">
+      <textarea name="comment" placeholder="Optional note (shown to the requester if you reject)"></textarea>
+      <div class="actions">
+        <button class="approve" type="submit" name="action" value="approve">
+          <span class="t">&#10003; Approve</span><span class="s">Your decision is recorded immediately</span></button>
+        <button class="reject" type="submit" name="action" value="reject">
+          <span class="t">&#10005; Reject</span><span class="s">The requester will be notified</span></button>
+      </div>
+    </form>
+    <div class="note">&#9432; Decisions are final and logged in the approval timeline.</div>
+  </div>
+
+
+<div class="foot">
+  <div>&#128274; This is an automated page from FormFlow. Please do not reply.</div>
+  <div>FormFlow request #1 · External #1</div>
+</div>
+</div></div></body></html>
