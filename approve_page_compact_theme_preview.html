@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emergency change CHG0031245</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f5f7;color:#111827;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:620px;margin:0 auto;padding:26px 16px 48px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;border-left:5px solid #007BC0;padding:22px 24px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.logo{font-weight:800;letter-spacing:.06em;color:#007BC0;font-size:15px}
+.due{font-size:12px;color:#E2462F;font-weight:700}
+h1{margin:12px 0 2px;font-size:20px}
+.sub{color:#6b7280;font-size:13px;margin:0 0 12px}
+.desc{color:#4b5563;font-size:13.5px;line-height:1.55;margin:0 0 14px}
+.sec{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.04em;color:#007BC0;text-transform:uppercase}
+.row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px}
+.row:last-child{border-bottom:0}
+.row .k{width:44%;color:#6b7280;flex:none}
+.row .v{font-weight:600;word-break:break-word}
+.row .v.bad{color:#E2462F}.row .v.good{color:#00884A}
+textarea{width:100%;border:1px solid #d8dee8;border-radius:8px;padding:10px 12px;font:inherit;font-size:13px;min-height:64px;margin-top:14px}
+.actions{display:flex;gap:10px;margin-top:12px}
+.actions button{flex:1;border:0;border-radius:8px;padding:12px;cursor:pointer;color:#fff;font-weight:700;font-size:14px}
+.approve{background:#00884A}.reject{background:#E2462F}
+.state{text-align:center;padding:26px 0}
+.state h1{font-size:19px}.muted{color:#6b7280;font-size:13px}
+.foot{color:#9ca3af;font-size:11px;margin-top:14px;text-align:center}
+</style></head>
+<body class="theme-compact"><div class="wrap"><div class="card">
+  <div class="top">
+    <div class="logo">ACME CHANGE DESK</div>
+    <div class="due">&#9200; SLA / DEADLINE: 04 Jul 2026, 06:00 PM</div>
+  </div>
+
+
+  <h1>Emergency change CHG0031245</h1>
+  <p class="sub">Emergency Change | CAB Approval</p>
+  <p class="desc">Emergency certificate renewal on the integration gateway.</p>
+
+  
+    <div class="sec">Request Details</div>
+    
+    <div class="row"><div class="k">Change Number</div><div class="v ">CHG0031245</div></div>
+    
+    <div class="row"><div class="k">System</div><div class="v ">SAP PI/PO</div></div>
+    
+    <div class="row"><div class="k">Risk</div><div class="v ">Low</div></div>
+    
+    <div class="row"><div class="k">Implementation Window</div><div class="v ">Sat 05 Jul, 02:00–04:00 CET</div></div>
+    
+    <div class="row"><div class="k">Type</div><div class="v ">Emergency Change</div></div>
+    
+    <div class="row"><div class="k">Due Date</div><div class="v ">04 Jul 2026, 06:00 PM</div></div>
+    
+  
+    <div class="sec">Request Information</div>
+    
+    <div class="row"><div class="k">Requested on</div><div class="v ">07 Jul 2026, 07:26 AM</div></div>
+    
+    <div class="row"><div class="k">Approver</div><div class="v ">cab@bosch-test.example · CAB Approval</div></div>
+    
+  
+
+  <form method="post"><input type="hidden" name="csrfmiddlewaretoken" value="UK08PiA9UTKcUAYfXWCL8tT1aqNFMGQ747ZcvnQcupgZMfn3ANpWBAFciciEZ7fL">
+    <textarea name="comment" placeholder="Optional note (shown to the requester if you reject)"></textarea>
+    <div class="actions">
+      <button class="approve" type="submit" name="action" value="approve">&#10003; Authorize change</button>
+      <button class="reject" type="submit" name="action" value="reject">&#10005; Decline</button>
+    </div>
+  </form>
+
+
+  <div class="foot">Automated by Acme ITSM. · FormFlow request #1 · External #1</div>
+</div></div></body></html>
