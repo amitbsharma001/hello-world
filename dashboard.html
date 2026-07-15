@@ -1,0 +1,668 @@
+{% extends "aegis/base.html" %}
+{% block title %}Portfolio dashboard · Assist{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <header class="page-header">
+    <div class="page-header__crumbs">
+      <a href="{% url 'aegis:queue' %}">Workspace</a><span>/</span><span>Dashboard</span>
+    </div>
+    <div class="row row--between" style="align-items:flex-end;gap:var(--space-4);flex-wrap:wrap;">
+      <div>
+        <h1 class="page-header__title">Portfolio command center</h1>
+        <p class="page-header__subtitle">
+          Cross-team health, SLA risk, delivery flow, and a forward-looking outlook — everything a PM needs to run multiple teams.
+        </p>
+      </div>
+      <div class="row gap-3" style="flex-wrap:wrap;">
+        {% if project_options %}
+          <form method="get" id="proj-filter" style="display:inline-flex;">
+            <input type="hidden" name="range" value="{{ range_key }}">
+            <select name="project" class="select" style="width:auto;" onchange="document.getElementById('proj-filter').submit()">
+              <option value="">All projects</option>
+              {% for p in project_options %}
+                <option value="{{ p.id }}" {% if project_filter == p.id|stringformat:'s' %}selected{% endif %}>{{ p.key }} · {{ p.name }}</option>
+              {% endfor %}
+            </select>
+            {% if label_options %}
+            <select name="label" class="select" style="width:auto;margin-left:var(--space-2);" onchange="document.getElementById('proj-filter').submit()">
+              <option value="">All groups</option>
+              {% for l in label_options %}
+                <option value="{{ l }}" {% if label_filter == l %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+          </form>
+        {% endif %}
+        <div class="seg">
+          {% for key, label in ranges %}
+            <a href="?range={{ key }}{% if project_filter %}&project={{ project_filter }}{% endif %}{% if label_filter %}&label={{ label_filter|urlencode }}{% endif %}" class="seg__item {% if key == range_key %}seg__item--active{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+        <span class="tag tag--brand">Administrator</span>
+      </div>
+    </div>
+    {% if active_project or label_filter %}
+      <div class="page-header__meta">
+        {% if active_project %}<span class="tag">Scoped to {{ active_project.key }} · {{ active_project.name }}</span>{% endif %}
+        {% if label_filter %}<span class="tag tag--info">Group: {{ label_filter }}</span>{% endif %}
+        <a href="?range={{ range_key }}" class="t-caption" style="color:var(--content-brand);">Clear filters</a>
+      </div>
+    {% endif %}
+  </header>
+
+  <!-- ===== Health score + auto insights ===== -->
+  <section style="display:grid;grid-template-columns:320px 1fr;gap:var(--space-5);margin-bottom:var(--space-6);">
+
+    <!-- Health score -->
+    <article class="card health-card health-card--{{ hstatus|slugify }}">
+      <div class="card__body">
+        <div class="t-label" style="margin-bottom:var(--space-3);">Portfolio health</div>
+        <div class="row gap-4" style="align-items:center;">
+          <svg class="gauge" viewBox="0 0 120 120" width="116" height="116">
+            <circle class="gauge__track" cx="60" cy="60" r="52" fill="none" stroke-width="10"/>
+            <circle class="gauge__fill gauge__fill--{{ hstatus|slugify }}" cx="60" cy="60" r="52"
+                    fill="none" stroke-width="10" stroke-linecap="round"
+                    stroke-dasharray="{{ gauge_dash }} {{ gauge_gap }}"
+                    transform="rotate(-90 60 60)"/>
+            <text x="60" y="58" text-anchor="middle" class="gauge__num">{{ health }}</text>
+            <text x="60" y="76" text-anchor="middle" class="gauge__grade">{{ grade }}</text>
+          </svg>
+          <div>
+            <div class="health-status health-status--{{ hstatus|slugify }}">{{ hstatus }}</div>
+            <div class="t-caption" style="margin-top:var(--space-1);">
+              {% if health_trend > 0 %}<span class="delta delta--good">▲ +{{ health_trend }} pts</span>
+              {% elif health_trend < 0 %}<span class="delta delta--bad">▼ {{ health_trend }} pts</span>
+              {% else %}<span class="t-subtle">flat</span>{% endif %}
+              <span class="t-subtle">vs prior {{ period_label }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="divider" style="margin:var(--space-4) 0;"></div>
+        <div class="stack gap-2">
+          {% for f in health_factors %}
+            <div>
+              <div class="row row--between" style="margin-bottom:3px;">
+                <span class="t-caption">{{ f.label }} <span class="t-subtle">· contributes {{ f.points }} pts</span></span>
+                <span class="t-caption t-tabular" style="font-weight:600;">{{ f.score }}</span>
+              </div>
+              <div class="meter" style="height:4px;"><div class="meter__fill {% if f.score >= 80 %}meter__fill--ok{% elif f.score >= 60 %}meter__fill--warn{% else %}meter__fill--bad{% endif %}" style="width:{{ f.score }}%;"></div></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <!-- Auto-generated insights -->
+    <article class="card">
+      <header class="card__header">
+        <div>
+          <div class="card__title">What needs your attention</div>
+          <div class="t-caption">Auto-generated from this week's data</div>
+        </div>
+        <span class="t-caption">{{ insights|length }} insight{{ insights|length|pluralize }}</span>
+      </header>
+      <div class="card__body" style="padding:0;">
+        {% for ins in insights %}
+          <div class="insight insight--{{ ins.level }}">
+            <div class="insight__dot"></div>
+            <div>
+              <div class="insight__title">{{ ins.title }}</div>
+              <div class="insight__body">{{ ins.body }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <div style="padding:var(--space-8);text-align:center;" class="t-subtle">All clear — no flags this week.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
+  <!-- ===== KPI band with week-over-week deltas ===== -->
+  <section class="kpi-grid" style="margin-bottom:var(--space-6);">
+    <div class="kpi">
+      <div class="kpi__label">Open across teams</div>
+      <div class="kpi__value">{{ exec_kpis.open }}</div>
+      <div class="t-caption" style="margin-top:var(--space-2);">{{ exec_kpis.unassigned }} unassigned · {{ exec_kpis.escalations }} escalations</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">SLA compliance</div>
+      <div class="kpi__value" style="color:{% if exec_kpis.sla_all >= 90 %}var(--color-success-700){% elif exec_kpis.sla_all >= 75 %}var(--color-warning-700){% else %}var(--color-danger-700){% endif %};">{{ exec_kpis.sla_all }}<span class="kpi__unit">%</span></div>
+      {% if exec_kpis.sla_p is not None and exec_kpis.sla_pp is not None %}
+        <div class="t-caption" style="margin-top:var(--space-2);">
+          {% if exec_kpis.sla_p >= exec_kpis.sla_pp %}<span class="delta delta--good">▲ {{ exec_kpis.sla_p }}%</span>{% else %}<span class="delta delta--bad">▼ {{ exec_kpis.sla_p }}%</span>{% endif %} this period
+        </div>
+      {% else %}
+        <div class="t-caption" style="margin-top:var(--space-2);">on resolved</div>
+      {% endif %}
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">Created · {{ period_label }}</div>
+      <div class="kpi__value">{{ exec_kpis.created.cur }}</div>
+      <div class="t-caption" style="margin-top:var(--space-2);">
+        {% if exec_kpis.created.diff > 0 %}<span class="delta delta--bad">▲ +{{ exec_kpis.created.diff }}</span>{% elif exec_kpis.created.diff < 0 %}<span class="delta delta--good">▼ {{ exec_kpis.created.diff }}</span>{% else %}flat{% endif %} vs prior {{ period_label }}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">Resolved · {{ period_label }}</div>
+      <div class="kpi__value" style="color:var(--color-success-700);">{{ exec_kpis.resolved.cur }}</div>
+      <div class="t-caption" style="margin-top:var(--space-2);">
+        {% if exec_kpis.resolved.diff > 0 %}<span class="delta delta--good">▲ +{{ exec_kpis.resolved.diff }}</span>{% elif exec_kpis.resolved.diff < 0 %}<span class="delta delta--bad">▼ {{ exec_kpis.resolved.diff }}</span>{% else %}flat{% endif %} vs prior {{ period_label }}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">Net flow · {{ period_label }}</div>
+      <div class="kpi__value" style="color:{% if exec_kpis.net_flow_p > 0 %}var(--color-danger-700){% elif exec_kpis.net_flow_p < 0 %}var(--color-success-700){% else %}var(--content-primary){% endif %};">{% if exec_kpis.net_flow_p > 0 %}+{% endif %}{{ exec_kpis.net_flow_p }}</div>
+      <div class="t-caption" style="margin-top:var(--space-2);">prior {% if exec_kpis.net_flow_pp > 0 %}+{% endif %}{{ exec_kpis.net_flow_pp }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">MTTR</div>
+      <div class="kpi__value">{{ exec_kpis.mttr_all }}<span class="kpi__unit">h</span></div>
+      <div class="t-caption" style="margin-top:var(--space-2);">
+        {% if exec_kpis.mttr_p and exec_kpis.mttr_pp %}
+          {% if exec_kpis.mttr_p <= exec_kpis.mttr_pp %}<span class="delta delta--good">▼ {{ exec_kpis.mttr_p }}h</span>{% else %}<span class="delta delta--bad">▲ {{ exec_kpis.mttr_p }}h</span>{% endif %} this period
+        {% else %}mean resolve time{% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Outlook (predictive) + cycle-time percentiles ===== -->
+  <section style="display:grid;grid-template-columns:2fr 1fr;gap:var(--space-5);margin-bottom:var(--space-6);">
+
+    <article class="card">
+      <header class="card__header">
+        <div>
+          <div class="card__title">Run-rate outlook</div>
+          <div class="t-caption">Trailing 4-week run-rate — indicative, not a forecast</div>
+        </div>
+        <span class="tag {% if forecast.backlog.state == 'growing' %}tag--danger{% elif forecast.backlog.state == 'clearing' %}tag--success{% else %}tag--info{% endif %}">{{ forecast.backlog.state }}</span>
+      </header>
+      <div class="card__body">
+        <div class="forecast-grid">
+          <div class="forecast-cell">
+            <div class="t-label" style="margin-bottom:var(--space-1);">Backlog projection</div>
+            <div class="forecast-cell__big">
+              {% if forecast.backlog.state == "clearing" %}~{{ forecast.backlog.weeks }}<span class="kpi__unit">wk</span>
+              {% elif forecast.backlog.state == "growing" %}+{{ forecast.backlog.rate }}<span class="kpi__unit">/wk</span>
+              {% else %}—{% endif %}
+            </div>
+            <div class="t-caption">{{ forecast.backlog.text }}</div>
+          </div>
+          <div class="forecast-cell">
+            <div class="t-label" style="margin-bottom:var(--space-1);">Breaches forecast · 48h</div>
+            <div class="forecast-cell__big" style="color:{% if forecast.breaches_48h %}var(--color-danger-700){% else %}var(--color-success-700){% endif %};">{{ forecast.breaches_48h }}</div>
+            <div class="t-caption">open tickets due to breach SLA</div>
+          </div>
+          <div class="forecast-cell">
+            <div class="t-label" style="margin-bottom:var(--space-1);">Expected · next 7d</div>
+            <div class="forecast-cell__big">{{ forecast.expected_resolutions_7d }}<span class="t-subtle" style="font-size:var(--text-lg);font-weight:400;"> / {{ forecast.expected_intake_7d }}</span></div>
+            <div class="t-caption">resolved / new (run-rate)</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header">
+        <div>
+          <div class="card__title">Cycle time</div>
+          <div class="t-caption">Resolution latency · {{ cycle.n }} tickets</div>
+        </div>
+      </header>
+      <div class="card__body">
+        <div class="stack gap-3">
+          <div class="row row--between"><span class="t-body-sm">Median (p50)</span><span class="t-tabular" style="font-weight:600;">{{ cycle.p50 }}h</span></div>
+          <div class="meter"><div class="meter__fill meter__fill--ok" style="width:{% widthratio cycle.p50 cycle.p95 100 %}%;"></div></div>
+          <div class="row row--between"><span class="t-body-sm">p90</span><span class="t-tabular" style="font-weight:600;">{{ cycle.p90 }}h</span></div>
+          <div class="meter"><div class="meter__fill meter__fill--warn" style="width:{% widthratio cycle.p90 cycle.p95 100 %}%;"></div></div>
+          <div class="row row--between"><span class="t-body-sm">p95 <span class="t-subtle">(worst tail)</span></span><span class="t-tabular" style="font-weight:600;color:var(--color-danger-700);">{{ cycle.p95 }}h</span></div>
+          <div class="meter"><div class="meter__fill meter__fill--bad" style="width:100%;"></div></div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ===== Team scorecard ===== -->
+  <article class="card" style="margin-bottom:var(--space-6);">
+    <header class="card__header">
+      <div>
+        <div class="card__title">Team scorecard</div>
+        <div class="t-caption">Sorted by attention needed — critical, then at-risk, then load</div>
+      </div>
+      <a href="{% url 'aegis:queue' %}" class="t-caption">All tickets →</a>
+    </header>
+    <div class="data-table" style="border:0;border-radius:0;">
+      <table>
+        <thead class="data-table__head">
+          <tr>
+            <th>Team</th><th style="width:130px;">Load</th>
+            <th style="width:60px;text-align:right;">Open</th>
+            <th style="width:75px;text-align:right;">Critical</th>
+            <th style="width:75px;text-align:right;">At risk</th>
+            <th style="width:85px;text-align:right;">Avg age</th>
+            <th style="width:95px;text-align:right;">Resolved</th>
+            <th style="width:90px;text-align:right;">Net flow</th>
+            <th style="width:90px;text-align:right;">SLA %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in team_rows %}
+            <tr class="data-table__row" onclick="window.location='{% url 'aegis:queue' %}?team={{ r.name|urlencode }}'">
+              <td><span class="data-table__title">{{ r.name }}</span></td>
+              <td><div class="meter"><div class="meter__fill {% if r.critical %}meter__fill--bad{% else %}meter__fill--ink{% endif %}" style="width:{{ r.load_pct }}%;"></div></div></td>
+              <td class="num"><strong>{{ r.open }}</strong></td>
+              <td class="num">{% if r.critical %}<span class="tag tag--sev1">{{ r.critical }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num">{% if r.at_risk %}<span class="tag tag--warning">{{ r.at_risk }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num t-tabular">{{ r.avg_age }}h</td>
+              <td class="num t-tabular" style="color:var(--color-success-700);">{{ r.resolved_p }}</td>
+              <td class="num t-tabular" style="color:{% if r.net_flow > 0 %}var(--color-danger-700){% elif r.net_flow < 0 %}var(--color-success-700){% else %}var(--content-tertiary){% endif %};">{% if r.net_flow > 0 %}↑ +{{ r.net_flow }}{% elif r.net_flow < 0 %}↓ {{ r.net_flow }}{% else %}0{% endif %}</td>
+              <td class="num"><span class="t-tabular" style="font-weight:600;color:{% if r.sla_pct >= 90 %}var(--color-success-700){% elif r.sla_pct >= 75 %}var(--color-warning-700){% else %}var(--color-danger-700){% endif %};">{{ r.sla_pct }}%</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="9" style="padding:var(--space-12);text-align:center;color:var(--content-tertiary);">No team data yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <!-- ===== Project portfolio (when viewing all projects) ===== -->
+  {% if project_rows %}
+  <article class="card" style="margin-bottom:var(--space-6);">
+    <header class="card__header">
+      <div>
+        <div class="card__title">Project portfolio</div>
+        <div class="t-caption">Per-project health across all synced projects — sorted by attention needed</div>
+      </div>
+      <a href="{% url 'aegis:projects' %}" class="t-caption" style="color:var(--content-brand);">Configure →</a>
+    </header>
+    <div class="data-table" style="border:0;border-radius:0;">
+      <table>
+        <thead class="data-table__head">
+          <tr>
+            <th>Project</th>
+            <th style="width:120px;">Health</th>
+            <th style="width:60px;text-align:right;">Open</th>
+            <th style="width:75px;text-align:right;">Critical</th>
+            <th style="width:75px;text-align:right;">At risk</th>
+            <th style="width:100px;text-align:right;">Resolved {{ period_label }}</th>
+            <th style="width:90px;text-align:right;">SLA %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in project_rows %}
+            <tr class="data-table__row" onclick="window.location='?range={{ range_key }}&project={{ r.id }}{% if label_filter %}&label={{ label_filter|urlencode }}{% endif %}'">
+              <td><span class="t-mono" style="font-weight:600;">{{ r.key }}</span> · {{ r.name }}</td>
+              <td>
+                <div class="row gap-2">
+                  <span class="t-tabular" style="font-weight:700;">{{ r.health }}</span>
+                  <span class="health-status health-status--{{ r.hstatus|slugify }}" style="font-size:var(--text-2xs);">{{ r.hstatus }}</span>
+                </div>
+                <div class="meter" style="height:4px;margin-top:4px;"><div class="meter__fill {% if r.health >= 80 %}meter__fill--ok{% elif r.health >= 60 %}meter__fill--warn{% else %}meter__fill--bad{% endif %}" style="width:{{ r.health }}%;"></div></div>
+              </td>
+              <td class="num"><strong>{{ r.open }}</strong></td>
+              <td class="num">{% if r.critical %}<span class="tag tag--sev1">{{ r.critical }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num">{% if r.at_risk %}<span class="tag tag--warning">{{ r.at_risk }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num t-tabular" style="color:var(--color-success-700);">{{ r.resolved_p }}</td>
+              <td class="num"><span class="t-tabular" style="font-weight:600;color:{% if r.sla_pct >= 90 %}var(--color-success-700){% elif r.sla_pct >= 75 %}var(--color-warning-700){% else %}var(--color-danger-700){% endif %};">{{ r.sla_pct }}%</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  <!-- ===== Full KPI catalog ===== -->
+  <article class="card" style="margin-bottom:var(--space-6);">
+    <header class="card__header">
+      <div>
+        <div class="card__title">KPI catalog</div>
+        <div class="t-caption">{{ kpi_catalog.available }} of {{ kpi_catalog.total }} indicators measurable with the ingested data · window-aware · hover any tile for its definition</div>
+      </div>
+    </header>
+    {% for cat in kpi_catalog.categories %}
+    <details {% if forloop.first %}open{% endif %} style="border-top:1px solid var(--border-subtle);">
+      <summary style="padding:var(--space-3) var(--space-5);cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span class="t-label">{{ cat.label }}</span>
+        <span class="t-caption" style="color:var(--content-tertiary);">{{ cat.kpis|length }} indicators</span>
+      </summary>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--space-3);padding:0 var(--space-5) var(--space-4);">
+        {% for k in cat.kpis %}
+        <div title="{{ k.definition }}" style="border:1px solid var(--border-subtle);border-radius:8px;padding:var(--space-3);{% if not k.available %}opacity:.45;{% endif %}">
+          <div class="t-caption" style="color:var(--content-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ k.label }}</div>
+          <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
+            <span class="t-tabular" style="font-size:19px;font-weight:600;">{{ k.value }}</span>
+            {% if k.delta and k.delta.dir != 'flat' %}
+              <span class="t-caption t-tabular" style="font-weight:600;color:{% if k.delta.good %}var(--color-success-700){% else %}var(--color-danger-700){% endif %};">
+                {% if k.delta.dir == 'up' %}▲{% else %}▼{% endif %} {{ k.delta.pct }}%
+              </span>
+            {% elif k.delta %}
+              <span class="t-caption" style="color:var(--content-tertiary);">→</span>
+            {% endif %}
+          </div>
+          {% if k.note %}<div class="t-caption" style="color:var(--content-tertiary);margin-top:2px;">{{ k.note }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+    <div style="padding:var(--space-3) var(--space-5);border-top:1px solid var(--border-subtle);">
+      <span class="t-caption" style="color:var(--content-tertiary);">
+        Deltas compare this window to the prior one; green means the move is good for that metric.
+        Greyed tiles are industry-standard KPIs this data cannot honestly support — the tooltip says why.
+      </span>
+    </div>
+  </article>
+
+  <!-- ===== Needs attention (rule-based member signals) ===== -->
+  {% if perf.flagged %}
+  <article class="card" style="margin-bottom:var(--space-6);border-left:3px solid var(--color-danger-700);">
+    <header class="card__header">
+      <div>
+        <div class="card__title">Needs attention</div>
+        <div class="t-caption">{{ perf.flagged|length }} member{{ perf.flagged|length|pluralize }} tripping ticket-data signals this window · thresholds configurable via AEGIS["PERFORMANCE"]</div>
+      </div>
+    </header>
+    <div>
+      {% for r in perf.flagged %}
+      <div style="padding:var(--space-3) var(--space-5);border-top:1px solid var(--border-subtle);display:flex;gap:var(--space-4);align-items:flex-start;flex-wrap:wrap;">
+        <div class="row gap-2" style="min-width:190px;">
+          <div class="avatar" style="width:24px;height:24px;font-size:10px;">{{ r.name|slice:":1"|upper }}</div>
+          <div style="min-width:0;">
+            <div class="data-table__title" style="line-height:1.2;">{{ r.name }}</div>
+            <div class="data-table__meta t-mono">{{ r.account }}</div>
+          </div>
+        </div>
+        <ul style="margin:0;padding:0;list-style:none;flex:1;min-width:260px;display:flex;flex-direction:column;gap:var(--space-2);">
+          {% for f in r.flags %}
+          <li class="t-body-sm" style="display:flex;gap:8px;align-items:baseline;">
+            <span class="tag {% if f.severity == 'danger' %}tag--danger{% else %}tag--warning{% endif %}" style="flex-shrink:0;">{{ f.code }}</span>
+            <span>{{ f.reason }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="padding:var(--space-3) var(--space-5);border-top:1px solid var(--border-subtle);">
+      <span class="t-caption" style="color:var(--content-tertiary);">
+        Signals come from ticket data only — they can reflect workload mix, ticket difficulty, or leave rather than
+        individual performance. Validate with context before acting. Members with fewer than
+        {{ perf.cfg.MIN_SAMPLE }} tickets of activity are never flagged.
+      </span>
+    </div>
+  </article>
+  {% endif %}
+
+  <!-- ===== Team member scorecard (configured TeamMembers) ===== -->
+  {% if member_rows %}
+  <article class="card" style="margin-bottom:var(--space-6);">
+    <header class="card__header">
+      <div>
+        <div class="card__title">Team performance</div>
+        <div class="t-caption">
+          {{ member_summary.tracked }} tracked member{{ member_summary.tracked|pluralize }} · per-person load across all their projects
+          {% if member_summary.overloaded %}· <span style="color:var(--color-danger-700);">{{ member_summary.overloaded.0 }} is carrying the most</span>{% endif %}
+          {% if not perf.flagged %}· <span style="color:var(--color-success-700);">no attention signals this window</span>{% endif %}
+        </div>
+      </div>
+      <div class="row gap-2" style="align-items:center;">
+        <a href="?range={{ range_key }}&team_view=members{% if project_filter %}&project={{ project_filter }}{% endif %}{% if label_filter %}&label={{ label_filter|urlencode }}{% endif %}"
+           class="tag {% if team_view != 'team' %}tag--brand{% endif %}">By member</a>
+        <a href="?range={{ range_key }}&team_view=team{% if project_filter %}&project={{ project_filter }}{% endif %}{% if label_filter %}&label={{ label_filter|urlencode }}{% endif %}"
+           class="tag {% if team_view == 'team' %}tag--brand{% endif %}">Whole team</a>
+        <a href="{% url 'aegis:teams' %}" class="t-caption" style="color:var(--content-brand);margin-left:var(--space-2);">Configure →</a>
+      </div>
+    </header>
+    {% if team_view == 'team' %}
+    <div class="card__body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:var(--space-4);">
+        <div><div class="t-label">Open</div><div class="t-tabular" style="font-size:22px;font-weight:600;">{{ perf.rollup.open }}</div></div>
+        <div><div class="t-label">Critical</div><div class="t-tabular" style="font-size:22px;font-weight:600;color:{% if perf.rollup.critical %}var(--color-danger-700){% else %}inherit{% endif %};">{{ perf.rollup.critical }}</div></div>
+        <div><div class="t-label">At risk</div><div class="t-tabular" style="font-size:22px;font-weight:600;color:{% if perf.rollup.at_risk %}var(--color-warning-700){% else %}inherit{% endif %};">{{ perf.rollup.at_risk }}</div></div>
+        <div><div class="t-label">Resolved {{ period_label }}</div><div class="t-tabular" style="font-size:22px;font-weight:600;color:var(--color-success-700);">{{ perf.rollup.resolved_p }}</div></div>
+        <div><div class="t-label">Net flow</div><div class="t-tabular" style="font-size:22px;font-weight:600;color:{% if perf.rollup.net_flow > 0 %}var(--color-danger-700){% elif perf.rollup.net_flow < 0 %}var(--color-success-700){% endif %};">{% if perf.rollup.net_flow > 0 %}+{% endif %}{{ perf.rollup.net_flow }}</div></div>
+        <div><div class="t-label">Team SLA</div><div class="t-tabular" style="font-size:22px;font-weight:600;">{% with s=perf.rollup.sla_pct|default_if_none:"na" %}{% if s == "na" %}—{% else %}{{ s }}%{% endif %}{% endwith %}</div></div>
+        <div><div class="t-label">Active members</div><div class="t-tabular" style="font-size:22px;font-weight:600;">{{ perf.rollup.active }}/{{ perf.rollup.members }}</div></div>
+        <div><div class="t-label">Median open</div><div class="t-tabular" style="font-size:22px;font-weight:600;">{{ perf.rollup.median_open }}</div></div>
+      </div>
+      <p class="t-caption" style="margin-top:var(--space-4);color:var(--content-tertiary);">
+        Aggregated over the {{ perf.rollup.members }} tracked member{{ perf.rollup.members|pluralize }} in this window{% if perf.rollup.busiest %} · {{ perf.rollup.busiest }} carries the largest open load{% endif %}.
+        Team SLA = met ÷ resolved-with-SLA across all members.
+      </p>
+    </div>
+    {% else %}
+    <div class="data-table" style="border:0;border-radius:0;">
+      <table>
+        <thead class="data-table__head">
+          <tr>
+            <th>Member</th>
+            <th style="width:120px;">Load</th>
+            <th style="width:60px;text-align:right;">Open</th>
+            <th style="width:75px;text-align:right;">Critical</th>
+            <th style="width:75px;text-align:right;">At risk</th>
+            <th style="width:80px;text-align:right;">Projects</th>
+            <th style="width:85px;text-align:right;">Avg age</th>
+            <th style="width:100px;text-align:right;">Resolved {{ period_label }}</th>
+            <th style="width:90px;text-align:right;">Net flow</th>
+            <th style="width:80px;text-align:right;">SLA %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in member_rows %}
+            <tr class="data-table__row">
+              <td>
+                <div class="row gap-2">
+                  <div class="avatar" style="width:24px;height:24px;font-size:10px;">{{ r.name|slice:":1"|upper }}</div>
+                  <div style="min-width:0;">
+                    <div class="data-table__title" style="line-height:1.2;">{{ r.name }}</div>
+                    <div class="data-table__meta t-mono">{{ r.account }}</div>
+                  </div>
+                </div>
+              </td>
+              <td><div class="meter"><div class="meter__fill {% if r.critical %}meter__fill--bad{% else %}meter__fill--ink{% endif %}" style="width:{{ r.load_pct }}%;"></div></div></td>
+              <td class="num"><strong>{{ r.open }}</strong></td>
+              <td class="num">{% if r.critical %}<span class="tag tag--sev1">{{ r.critical }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num">{% if r.at_risk %}<span class="tag tag--warning">{{ r.at_risk }}</span>{% else %}<span class="t-subtle">0</span>{% endif %}</td>
+              <td class="num"><span class="tag {% if r.projects > 1 %}tag--info{% endif %}">{{ r.projects }}</span></td>
+              <td class="num t-tabular">{{ r.avg_age }}h</td>
+              <td class="num t-tabular" style="color:var(--color-success-700);">{{ r.resolved_p }}</td>
+              <td class="num t-tabular" style="color:{% if r.net_flow > 0 %}var(--color-danger-700){% elif r.net_flow < 0 %}var(--color-success-700){% else %}var(--content-tertiary){% endif %};">{% if r.net_flow > 0 %}↑ +{{ r.net_flow }}{% elif r.net_flow < 0 %}↓ {{ r.net_flow }}{% else %}0{% endif %}</td>
+              <td class="num"><span class="t-tabular" style="font-weight:600;color:{% if r.sla_pct >= 90 %}var(--color-success-700){% elif r.sla_pct >= 75 %}var(--color-warning-700){% else %}var(--color-danger-700){% endif %};">{{ r.sla_pct }}%</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </article>
+  {% endif %}
+
+  <!-- ===== 3-col: backlog trend | throughput | MTTR by severity ===== -->
+  <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-5);margin-bottom:var(--space-6);">
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Backlog trend</div><div class="t-caption">Open at each week-end · 6 wk</div></div></header>
+      <div class="card__body">
+        <div class="spark">
+          {% for w in weeks %}
+            <div class="spark__col" title="{{ w.label }}: {{ w.backlog }} open">
+              <div class="spark__bar-wrap"><div class="spark__bar spark__bar--ink" style="height:{{ w.backlog_pct }}%;"><span class="spark__val">{{ w.backlog }}</span></div></div>
+              <div class="spark__label">{{ w.label|slice:":3" }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Throughput</div><div class="t-caption">Resolved per week · 6 wk</div></div></header>
+      <div class="card__body">
+        <div class="spark">
+          {% for w in weeks %}
+            <div class="spark__col" title="{{ w.label }}: {{ w.resolved }} resolved">
+              <div class="spark__bar-wrap"><div class="spark__bar spark__bar--ok" style="height:{{ w.resolved_pct }}%;"><span class="spark__val">{{ w.resolved }}</span></div></div>
+              <div class="spark__label">{{ w.label|slice:":3" }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">MTTR by severity</div><div class="t-caption">Actual vs target</div></div></header>
+      <div class="card__body">
+        <div class="stack gap-3">
+          {% for m in mttr_by_sev %}
+            <div>
+              <div class="row row--between" style="margin-bottom:4px;">
+                <span class="t-body-sm"><span class="tag tag--{{ m.key }}">{{ m.label }}</span></span>
+                <span class="t-body-sm t-tabular">
+                  <strong style="color:{% if m.over %}var(--color-danger-700){% else %}var(--content-primary){% endif %};">{{ m.actual }}h</strong>
+                  <span class="t-subtle">/ {{ m.target }}h</span>
+                </span>
+              </div>
+              <div class="meter"><div class="meter__fill {% if m.over %}meter__fill--bad{% else %}meter__fill--ok{% endif %}" style="width:{{ m.pct }}%;"></div></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ===== 2-col: aging distribution | status bottleneck ===== -->
+  <section style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5);margin-bottom:var(--space-6);">
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Ticket age distribution</div><div class="t-caption">Open tickets by age — where work is rotting</div></div>{% if stale_count %}<span class="tag tag--warning">{{ stale_count }} stale</span>{% endif %}</header>
+      <div class="card__body">
+        <div class="stack gap-4">
+          {% for b in aging_dist %}
+            <div>
+              <div class="row row--between" style="margin-bottom:4px;">
+                <span class="t-body-sm">{{ b.label }}</span>
+                <span class="t-body-sm t-tabular"><strong>{{ b.n }}</strong></span>
+              </div>
+              <div class="meter" style="height:10px;"><div class="meter__fill {% if forloop.last and b.n %}meter__fill--bad{% elif forloop.counter >= 3 and b.n %}meter__fill--warn{% else %}meter__fill--ink{% endif %}" style="width:{{ b.pct }}%;"></div></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Pipeline bottlenecks</div><div class="t-caption">Open tickets by status · avg age</div></div></header>
+      <div class="card__body" style="padding:0;">
+        {% for s in status_stuck %}
+          <div class="dash-row" style="cursor:default;">
+            <span class="tag tag--{{ s.key }}">{{ s.label }}</span>
+            <div style="flex:1;"></div>
+            <span class="t-body-sm t-tabular t-subtle">{{ s.n }} open</span>
+            <span class="t-body-sm t-tabular" style="min-width:70px;text-align:right;color:{% if s.bottleneck %}var(--color-danger-700){% else %}var(--content-secondary){% endif %};font-weight:600;">{{ s.avg_age }}h avg</span>
+            {% if s.bottleneck %}<span class="tag tag--danger">bottleneck</span>{% endif %}
+          </div>
+        {% empty %}
+          <div style="padding:var(--space-8);text-align:center;" class="t-subtle">No open tickets.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
+  <!-- ===== 2-col: SLA watchlist | workload ===== -->
+  <section style="display:grid;grid-template-columns:3fr 2fr;gap:var(--space-5);margin-bottom:var(--space-6);">
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">SLA watchlist</div><div class="t-caption">Closest to breaching — act first</div></div></header>
+      <div class="card__body" style="padding:0;">
+        {% for row in watchlist_rows %}
+          <a href="{% url 'aegis:detail' row.t.id %}" class="dash-row">
+            <span class="tag tag--{{ row.t.severity }}">{{ row.t.severity|upper }}</span>
+            <div style="flex:1;min-width:0;">
+              <div class="truncate" style="font-weight:600;">{{ row.t.title }}</div>
+              <div class="t-caption truncate">{{ row.t.team|default:"—" }}{% if row.t.assignee %} · {{ row.t.assignee }}{% endif %}</div>
+            </div>
+            {% if row.state == "breached" %}<span class="tag tag--danger">breached</span>
+            {% elif row.state == "at_risk" %}<span class="tag tag--warning">{{ row.htb }}h left</span>
+            {% else %}<span class="t-caption t-tabular">{{ row.htb }}h left</span>{% endif %}
+          </a>
+        {% empty %}
+          <div style="padding:var(--space-8);text-align:center;" class="t-subtle">No SLA-tracked tickets open.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Workload by owner</div><div class="t-caption">Spot overload</div></div></header>
+      <div class="card__body">
+        <div class="stack gap-4">
+          {% for o in owners %}
+            <div>
+              <div class="row row--between" style="margin-bottom:4px;">
+                <div class="row gap-2">
+                  <div class="avatar" style="width:24px;height:24px;font-size:10px;">{{ o.username|slice:":1"|upper }}</div>
+                  <span class="t-body-sm" style="font-weight:500;">{{ o.username }}</span>
+                  {% if o.overloaded %}<span class="tag tag--danger">high</span>{% endif %}
+                </div>
+                <span class="t-body-sm t-tabular"><strong>{{ o.n }}</strong> <span class="t-subtle">· {{ o.share }}%</span></span>
+              </div>
+              <div class="meter"><div class="meter__fill {% if o.overloaded %}meter__fill--bad{% else %}meter__fill--ink{% endif %}" style="width:{{ o.pct }}%;"></div></div>
+            </div>
+          {% empty %}
+            <div class="t-subtle t-body-sm">No assigned owners.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ===== 2-col: risk hotspots | agent leverage ===== -->
+  <section style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5);margin-bottom:var(--space-12);">
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Risk hotspots</div><div class="t-caption">Where critical load concentrates</div></div></header>
+      <div class="card__body">
+        <div class="stack gap-4">
+          {% for h in hotspots %}
+            <div>
+              <div class="row row--between" style="margin-bottom:4px;">
+                <span class="t-body-sm" style="font-weight:500;">{{ h.team }}</span>
+                <span class="t-body-sm t-tabular">{{ h.n }} crit · <strong>{{ h.pct }}%</strong></span>
+              </div>
+              <div class="meter"><div class="meter__fill meter__fill--bad" style="width:{{ h.pct }}%;"></div></div>
+            </div>
+          {% empty %}
+            <div class="t-subtle t-body-sm">No critical tickets open. </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__header"><div><div class="card__title">Automation leverage</div><div class="t-caption">Agent ROI · last 7 days</div></div></header>
+      <div class="card__body">
+        <div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:var(--space-4);">
+          <div>
+            <div class="t-label" style="margin-bottom:var(--space-1);">Runs</div>
+            <div style="font-size:var(--text-3xl);font-weight:700;" class="t-tabular">{{ auto.runs_7d }}</div>
+          </div>
+          <div>
+            <div class="t-label" style="margin-bottom:var(--space-1);">Coverage</div>
+            <div style="font-size:var(--text-3xl);font-weight:700;" class="t-tabular">{{ auto.coverage_pct }}<span class="kpi__unit">%</span></div>
+          </div>
+          <div>
+            <div class="t-label" style="margin-bottom:var(--space-1);">Tickets touched</div>
+            <div style="font-size:var(--text-2xl);font-weight:600;" class="t-tabular">{{ auto.tickets_touched }}</div>
+          </div>
+          <div>
+            <div class="t-label" style="margin-bottom:var(--space-1);">Est. time saved</div>
+            <div style="font-size:var(--text-2xl);font-weight:600;" class="t-tabular">{{ auto.minutes_saved }}<span class="kpi__unit">min</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+</div>
+{% endblock %}
